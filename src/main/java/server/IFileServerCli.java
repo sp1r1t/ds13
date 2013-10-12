@@ -27,7 +27,7 @@ public interface IFileServerCli {
 	 * <p/>
 	 * E.g.:
 	 * <pre>
-	 * &gt; !exit
+	 * > !exit
 	 * Shutting down file server now
 	 * </pre>
 	 *
