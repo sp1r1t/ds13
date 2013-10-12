@@ -22,7 +22,10 @@ import java.io.BufferedReader;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.charset.Charset;
+
+import java.net.*;
 
 /**
  * The Server
@@ -52,14 +55,12 @@ public class FileServer implements IFileServer {
     private int udpPort;
 
 
+    /**
+     * main function
+     */
     public static void main(String[] args) {
         String name = new String("fs1");
         FileServer fs1 = new FileServer(name);
-        if(fs1.readConfigFile() != 0) {
-            System.err.println("FATAL: stopping server");
-        }
-        System.err.println(name + " configured, starting services.");
-
         return;
     }
 
@@ -68,13 +69,65 @@ public class FileServer implements IFileServer {
      */
     public FileServer(String name) {
         this.name = name;
+        if(readConfigFile() != 0) {
+            System.err.println("FATAL: stopping server");
+        }
+        System.err.println(name + " configured, starting services.");
+        
+        run();
+    }
+
+    @Override
+    public Response list() throws IOException {
+        return new ListResponse(new LinkedHashSet<String>());
+    }
+
+    @Override
+    public Response download(DownloadFileRequest request) throws IOException {
+        return new DownloadFileResponse(new DownloadTicket(), new byte[]{});
+    }
+
+    @Override
+    public Response info(InfoRequest request) throws IOException {
+        String filename = new String("filename.dummy");
+        long size = 0;
+        return new InfoResponse(filename, size);
+    }
+
+    @Override
+    public Response version(VersionRequest request) throws IOException {
+        String filename = new String("filename.dummy");
+        int version = 0;
+        return new VersionResponse(filename, version);
+    }
+
+    @Override
+    public MessageResponse upload(UploadRequest request) throws IOException {
+        String message = new String("Dummy Message.");
+        return new MessageResponse(message);
+    }
+
+
+    /**
+     * Entry function for running the services
+     */
+    private void run() {
+        if(testFileExists("short.txt")) {
+            System.out.println("Yea");
+        }
+        else {
+            System.out.println("Nope");
+        }
+
+        KeepAliveThread keepAlive = new KeepAliveThread();
+        keepAlive.run();
     }
 
     /**
      * Read variables from the config file.
      * The file needs to be named <name>.properties
      */
-    public int readConfigFile() {
+    private int readConfigFile() {
         HashMap<String,String> properties = new HashMap<String,String>();
 
         // setup
@@ -127,34 +180,49 @@ public class FileServer implements IFileServer {
         return 0;
     }
 
-    @Override
-    public Response list() throws IOException {
-        return new ListResponse(new LinkedHashSet<String>());
+    private boolean testFileExists(String filename) {
+        Path file = Paths.get(dir,filename);
+        return Files.exists(file);
     }
 
-    @Override
-    public Response download(DownloadFileRequest request) throws IOException {
-        return new DownloadFileResponse(new DownloadTicket(), new byte[]{});
-    }
+    
+    private static class KeepAliveThread implements Runnable {
+        
+        public void run() {
+            //TODO: get real vars
+            int udpPort = 12345;
+            String proxy = new String("localhost");
 
-    @Override
-    public Response info(InfoRequest request) throws IOException {
-        String filename = new String("filename.dummy");
-        long size = 0;
-        return new InfoResponse(filename, size);
-    }
+            // configure connection
+            try {
+                DatagramSocket socket = new DatagramSocket();
+                
+                byte[] buf = new byte[256];
+                
+                InetAddress address = InetAddress.getByName(proxy);
+                
+                DatagramPacket packet = 
+                    new DatagramPacket(buf, buf.length, address, udpPort); 
 
-    @Override
-    public Response version(VersionRequest request) throws IOException {
-        String filename = new String("filename.dummy");
-        int version = 0;
-        return new VersionResponse(filename, version);
+                // send keep alive                
+                for(int i=0; i < 10; i = i + 1) {
+                    socket.send(packet);
+                    Thread.sleep(4000);
+                }
+                // close socket
+                socket.close();
+            }
+            catch (InterruptedException x) {
+                System.out.println("But there is still stuff to do :(");
+            }
+            catch (IOException x) {
+                System.out.println("IO Interrupt");
+            }
+        }
+        
+        public static void main(String args[]) throws InterruptedException {
+            (new Thread(new KeepAliveThread())).start();
+        }
+        
     }
-
-    @Override
-    public MessageResponse upload(UploadRequest request) throws IOException {
-        String message = new String("Dummy Message.");
-        return new MessageResponse(message);
-    }
-
 }
