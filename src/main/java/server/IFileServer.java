@@ -17,7 +17,7 @@ public interface IFileServer {
 	 * Gets the complete list of files available to download on this server.
 	 * E.g.:
 	 * <pre>
-	 * &gt; !list
+	 * > !list
 	 * file1.txt
 	 * file2.txt
 	 * </pre>
@@ -33,8 +33,8 @@ public interface IFileServer {
 	 * Downloads the file with the given name (if possible).
 	 * E.g.:
 	 * <pre>
-	 * &gt; !download &lt;ticket&gt;
-	 * !data &lt;content&gt;
+	 * > !download <ticket>
+	 * !data <content>
 	 * </pre>
 	 *
 	 * @param request the download request
@@ -50,7 +50,7 @@ public interface IFileServer {
 	 * Returns the size of the file.
 	 * E.g.:
 	 * <pre>
-	 * &gt; !info file.txt
+	 * > !info file.txt
 	 * !info 73
 	 * </pre>
 	 *
@@ -66,7 +66,7 @@ public interface IFileServer {
 	 * Return the last version of the file available on this server.
 	 * E.g.:
 	 * <pre>
-	 * &gt; !version file.txt
+	 * > !version file.txt
 	 * !version 4
 	 * </pre>
 	 *
@@ -82,9 +82,9 @@ public interface IFileServer {
 	 * Saves the file to the shared directory.
 	 * <p/>
 	 * <b>Request</b>:<br/>
-	 * {@code !upload &lt;filename&gt; &lt;content&gt;}<br/>
+	 * {@code !upload <filename> <content>}<br/>
 	 * <b>Response:</b><br/>
-	 * {@code !upload &lt;message&gt;}<br/>
+	 * {@code !upload <message>}<br/>
 	 *
 	 * @param request the request containing the file to upload
 	 * @return message stating whether the upload was successful
