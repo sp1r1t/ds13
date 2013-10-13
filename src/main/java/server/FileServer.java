@@ -145,37 +145,22 @@ public class FileServer implements IFileServer{
 
         // accept connection
         Socket clientSocket = null;
-        try {
-            clientSocket = serverSocket.accept();
-        } 
-        catch (IOException e) {
-            System.out.println("Accept failed: " + tcpPort);
+        while(1) {
+            try {
+                clientSocket = serverSocket.accept();
+            } 
+            catch (IOException e) {
+                System.out.println("Accept failed: " + tcpPort);
+            }
+            
+            ProxyConnection con = new ProxyConnection(clientSocket);
+            try {
+                con.run();
+            }
+            catch (IOException x) {
+                System.err.println("Ex: Caugth IOException");
+            }
         }
-        
-        // talk
-        PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
-        BufferedReader in = new BufferedReader
-            (new InputStreamReader(clientSocket.getInputStream()));
-        
-        String inputLine, outputLine;
-        
-        // initiate conversation with client
-        outputLine = "sup?";
-        out.println(outputLine);
-        
-        while ((inputLine = in.readLine()) != null) {   
-            outputLine = "cool";
-            out.println(outputLine);
-            if (inputLine.equals("bye"))
-                break;
-        }
-        
-        // clean up
-        out.close();
-        in.close();
-        clientSocket.close();
-        serverSocket.close();
-
     }
 
     /**
@@ -305,6 +290,49 @@ public class FileServer implements IFileServer{
             catch (IOException x) {
                 System.out.println("Ex: IO Exception thrown.");
             }
+        }
+    }
+
+    private class ProxyConnection implements Runnable {
+        /** 
+         * member variables
+         */
+        Socket clientSocket;
+
+        /** 
+         * Constructor
+         */
+        public ProxyConnection(Socket clientSocket) {
+            this.clientSocket = clientSocket;
+        }
+
+        /**
+         * run method
+         */
+        public void run() throws IOException {
+            // talk
+            PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
+            BufferedReader in = new BufferedReader
+                (new InputStreamReader(clientSocket.getInputStream()));
+        
+            String inputLine, outputLine;
+        
+            // initiate conversation with client
+            outputLine = "sup?";
+            out.println(outputLine);
+        
+            while ((inputLine = in.readLine()) != null) {   
+                outputLine = "cool";
+                out.println(outputLine);
+                if (inputLine.equals("bye"))
+                    break;
+            }
+        
+            // clean up
+            out.close();
+            in.close();
+            clientSocket.close();
+            serverSocket.close();
         }
     }
 }
