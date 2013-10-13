@@ -15,6 +15,7 @@ import java.util.Set;
 import java.util.Scanner;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.Arrays;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -119,7 +120,8 @@ public class FileServer implements IFileServer {
             System.out.println("Nope");
         }
 
-        KeepAliveThread keepAlive = new KeepAliveThread();
+        KeepAliveThread keepAlive = 
+            new KeepAliveThread(udpPort, proxy, alivePeriod, tcpPort);
         keepAlive.run();
     }
 
@@ -188,16 +190,27 @@ public class FileServer implements IFileServer {
     
     private static class KeepAliveThread implements Runnable {
         
-        public void run() {
-            //TODO: get real vars
-            int udpPort = 12345;
-            String proxy = new String("localhost");
+        private int udpPort;
+        private String proxy;
+        private int alivePeriod;
+        private int tcpPort;
 
+        public KeepAliveThread(int udpPort, String proxy, 
+                               int alivePeriod, int tcpPort){
+            this.udpPort = udpPort;
+            this.proxy = proxy;
+            this.alivePeriod = alivePeriod;
+            this.tcpPort = tcpPort;
+        }
+
+        public void run() {
             // configure connection
             try {
                 DatagramSocket socket = new DatagramSocket();
                 
-                byte[] buf = new byte[256];
+                String msg = new String(String.valueOf(tcpPort));
+                byte[] buf = new byte[msg.length()];
+                buf = msg.getBytes();
                 
                 InetAddress address = InetAddress.getByName(proxy);
                 
@@ -205,9 +218,9 @@ public class FileServer implements IFileServer {
                     new DatagramPacket(buf, buf.length, address, udpPort); 
 
                 // send keep alive                
-                for(int i=0; i < 10; i = i + 1) {
+                for(int i=0; i < 5; i = i + 1) {
                     socket.send(packet);
-                    Thread.sleep(4000);
+                    Thread.sleep(alivePeriod);
                 }
                 // close socket
                 socket.close();
@@ -219,10 +232,5 @@ public class FileServer implements IFileServer {
                 System.out.println("IO Interrupt");
             }
         }
-        
-        public static void main(String args[]) throws InterruptedException {
-            (new Thread(new KeepAliveThread())).start();
-        }
-        
     }
 }
