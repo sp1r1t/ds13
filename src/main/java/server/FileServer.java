@@ -19,6 +19,8 @@ import java.util.Arrays;
 
 import java.io.IOException;
 import java.io.BufferedReader;
+import java.io.PrintWriter;
+import java.io.InputStreamReader;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -31,7 +33,7 @@ import java.net.*;
 /**
  * The Server
  */
-public class FileServer implements IFileServer {
+public class FileServer implements IFileServer{
     /**
      * private variables
      */
@@ -75,7 +77,13 @@ public class FileServer implements IFileServer {
         }
         System.err.println(name + " configured, starting services.");
         
-        run();
+        try {
+            run();
+        }
+        catch (IOException x) {
+            System.err.println("Ex: Caught IOException");
+        }
+            
     }
 
     @Override
@@ -112,7 +120,7 @@ public class FileServer implements IFileServer {
     /**
      * Entry function for running the services
      */
-    private void run() {
+    private void run() throws IOException {
         if(testFileExists("short.txt")) {
             System.out.println("Yea");
         }
@@ -125,6 +133,8 @@ public class FileServer implements IFileServer {
             new KeepAliveThread(udpPort, proxy, alivePeriod, tcpPort);
         keepAlive.run();
 
+
+        ServerSocket serverSocket = null;
         // start listening for connections
         try {
             serverSocket = new ServerSocket(tcpPort);
@@ -146,6 +156,7 @@ public class FileServer implements IFileServer {
         PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
         BufferedReader in = new BufferedReader
             (new InputStreamReader(clientSocket.getInputStream()));
+        
         String inputLine, outputLine;
         
         // initiate conversation with client
@@ -155,7 +166,7 @@ public class FileServer implements IFileServer {
         while ((inputLine = in.readLine()) != null) {   
             outputLine = "cool";
             out.println(outputLine);
-            if (outputLine.equals("Bye."))
+            if (inputLine.equals("bye"))
                 break;
         }
         
@@ -164,8 +175,6 @@ public class FileServer implements IFileServer {
         in.close();
         clientSocket.close();
         serverSocket.close();
-}
-        
 
     }
 
