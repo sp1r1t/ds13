@@ -183,18 +183,30 @@ public class FileServer implements IFileServer {
     }
 
     private boolean testFileExists(String filename) {
-        Path file = Paths.get(dir,filename);
-        return Files.exists(file);
+        Path path = Paths.get(dir,filename);
+        return Files.exists(path);
     }
+
+    private boolean testEnoughCredits(String filename, int credits) {
+        Path path = Paths.get(dir,filename);
+        File file = new File(path);
+        return (credits >= file.length());
+    }
+
 
     
     private static class KeepAliveThread implements Runnable {
-        
+        /**
+         * member variables
+         */
         private int udpPort;
         private String proxy;
         private int alivePeriod;
         private int tcpPort;
 
+        /**
+         * Constructor
+         */
         public KeepAliveThread(int udpPort, String proxy, 
                                int alivePeriod, int tcpPort){
             this.udpPort = udpPort;
@@ -203,6 +215,9 @@ public class FileServer implements IFileServer {
             this.tcpPort = tcpPort;
         }
 
+        /**
+         * run method
+         */
         public void run() {
             // configure connection
             try {
@@ -217,7 +232,8 @@ public class FileServer implements IFileServer {
                 DatagramPacket packet = 
                     new DatagramPacket(buf, buf.length, address, udpPort); 
 
-                // send keep alive                
+                // send keep alive      
+                // TODO: make it infinite
                 for(int i=0; i < 5; i = i + 1) {
                     socket.send(packet);
                     Thread.sleep(alivePeriod);
@@ -226,10 +242,10 @@ public class FileServer implements IFileServer {
                 socket.close();
             }
             catch (InterruptedException x) {
-                System.out.println("But there is still stuff to do :(");
+                System.out.println("Ex: Interrupt Exception thrown.");
             }
             catch (IOException x) {
-                System.out.println("IO Interrupt");
+                System.out.println("Ex: IO Exception thrown.");
             }
         }
     }
