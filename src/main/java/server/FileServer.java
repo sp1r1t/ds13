@@ -188,9 +188,14 @@ public class FileServer implements IFileServer {
     }
 
     private boolean testEnoughCredits(String filename, int credits) {
-        Path path = Paths.get(dir,filename);
-        File file = new File(path);
-        return (credits >= file.length());
+        try {
+            Path path = Paths.get(dir,filename);
+            return (credits >= Files.size(path));
+        }
+        catch (IOException x){
+            System.err.println("Ex: testEnoughCredits: IOException caught");
+            return false;
+        }
     }
 
 
