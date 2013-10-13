@@ -129,13 +129,14 @@ public class FileServer implements IFileServer{
         }
 
         // start thread to send keep_alive msgs
-        KeepAliveThread keepAlive = 
-            new KeepAliveThread(udpPort, proxy, alivePeriod, tcpPort);
-        keepAlive.run();
+        Thread keepAlive = new Thread
+            (new KeepAliveThread(udpPort, proxy, alivePeriod, tcpPort));
+        keepAlive.start();
 
 
         ServerSocket serverSocket = null;
         // start listening for connections
+        System.out.println("Creating server socket.");
         try {
             serverSocket = new ServerSocket(tcpPort);
         } 
@@ -145,7 +146,9 @@ public class FileServer implements IFileServer{
 
         // accept connection
         Socket clientSocket = null;
-        while(1) {
+        int i = 0;
+        while(i < 5) {
+            System.out.println("Waiting for " + i + ". client.");
             try {
                 clientSocket = serverSocket.accept();
             } 
@@ -153,14 +156,13 @@ public class FileServer implements IFileServer{
                 System.out.println("Accept failed: " + tcpPort);
             }
             
-            ProxyConnection con = new ProxyConnection(clientSocket);
-            try {
-                con.run();
-            }
-            catch (IOException x) {
-                System.err.println("Ex: Caugth IOException");
-            }
+            Thread con = new Thread(new ProxyConnection(clientSocket));
+            con.start();
+            i = i + 1;
         }
+
+        // close socket
+        serverSocket.close();
     }
 
     /**
@@ -309,30 +311,35 @@ public class FileServer implements IFileServer{
         /**
          * run method
          */
-        public void run() throws IOException {
-            // talk
-            PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
-            BufferedReader in = new BufferedReader
-                (new InputStreamReader(clientSocket.getInputStream()));
-        
-            String inputLine, outputLine;
-        
-            // initiate conversation with client
-            outputLine = "sup?";
-            out.println(outputLine);
-        
-            while ((inputLine = in.readLine()) != null) {   
-                outputLine = "cool";
+        public void run() {
+            try{
+                // talk
+                PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
+                BufferedReader in = new BufferedReader
+                    (new InputStreamReader(clientSocket.getInputStream()));
+                
+                String inputLine, outputLine;
+                
+                // initiate conversation with client
+                outputLine = "sup?";
                 out.println(outputLine);
-                if (inputLine.equals("bye"))
-                    break;
+                
+                while ((inputLine = in.readLine()) != null) {   
+                    outputLine = "cool";
+                    out.println(outputLine);
+                    if (inputLine.equals("bye"))
+                        break;
+                }
+                
+                // clean up
+                out.close();
+                in.close();
+                clientSocket.close();
             }
-        
-            // clean up
-            out.close();
-            in.close();
-            clientSocket.close();
-            serverSocket.close();
+            catch (IOException x) {
+                System.err.println("Ex: Caugth IOException");
+            }
+
         }
     }
 }
