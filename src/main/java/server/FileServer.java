@@ -16,6 +16,7 @@ import java.util.Scanner;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.Arrays;
+import java.util.ArrayList;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -30,6 +31,11 @@ import java.nio.charset.Charset;
 
 import java.net.*;
 
+import cli.Command;
+import cli.Shell;
+
+import util.Config;
+
 /**
  * The Server
  */
@@ -39,6 +45,11 @@ public class FileServer implements IFileServer{
      */
     // name of the server
     private String name;
+
+    // stop signal
+    private boolean stop = false;
+
+    protected ServerSocket serverSocket = null;
 
     // everything below is read from the config file
 
@@ -57,6 +68,8 @@ public class FileServer implements IFileServer{
     // UDP port of the proxy to send alive packets to
     private int udpPort;
 
+    // shell
+    private Shell shell;
 
     /**
      * main function
@@ -72,9 +85,16 @@ public class FileServer implements IFileServer{
      */
     public FileServer(String name) {
         this.name = name;
-        if(readConfigFile() != 0) {
+        Config config = new Config(name);
+        alivePeriod = config.getInt("fileserver.alive");
+        dir = config.getString("fileserver.dir");
+        tcpPort = config.getInt("tcp.port");
+        proxy = config.getString("proxy.host");
+        udpPort = config.getInt("proxy.udp.port");
+        
+/*        if(readConfigFile() != 0) {
             System.err.println("FATAL: stopping server");
-        }
+            }*/
         System.err.println(name + " configured, starting services.");
         
         try {
@@ -121,44 +141,57 @@ public class FileServer implements IFileServer{
      * Entry function for running the services
      */
     private void run() throws IOException {
-        if(testFileExists("short.txt")) {
-            System.out.println("Yea");
-        }
-        else {
-            System.out.println("Nope");
-        }
+        ArrayList<Thread> threads = new ArrayList<Thread>();
 
         // start thread to send keep_alive msgs
         Thread keepAlive = new Thread
             (new KeepAliveThread(udpPort, proxy, alivePeriod, tcpPort));
         keepAlive.start();
+        threads.add(keepAlive);
+
+        // start shell
+        System.out.println("Starting the shell.");
+        shell = new Shell(name, System.out, System.in);
+        shell.register(new FileServerCommands());
+        Thread shellThread = new Thread(shell);
+        shellThread.start();
 
 
-        ServerSocket serverSocket = null;
         // start listening for connections
         System.out.println("Creating server socket.");
         try {
             serverSocket = new ServerSocket(tcpPort);
         } 
         catch (IOException e) {
-            System.out.println("Could not listen on port: " + tcpPort);
+            System.out.println("FileServer::run: Could not listen on port: " + tcpPort);
         }
 
         // accept connection
         Socket clientSocket = null;
         int i = 0;
-        while(i < 5) {
+        while(!stop) {
             System.out.println("Waiting for " + i + ". client.");
             try {
                 clientSocket = serverSocket.accept();
             } 
             catch (IOException e) {
-                System.out.println("Accept failed: " + tcpPort);
+                System.out.println("FileServer::run: Accept failed: " + tcpPort);
             }
             
             Thread con = new Thread(new ProxyConnection(clientSocket));
+            con.setName("ProxyConnection" + i);
             con.start();
+            threads.add(con);
             i = i + 1;
+        }
+
+        // stop threads
+        while(!threads.isEmpty()) {
+            Thread cur = threads.get(0);
+            if(cur != null) {
+                cur.interrupt();
+            }
+            threads.remove(0);
         }
 
         // close socket
@@ -202,7 +235,7 @@ public class FileServer implements IFileServer{
                 }
             }
         catch (IOException x) {
-            System.err.format("IOException: %s%n", x);
+            System.err.format("FileServer::readConfigFile: IOException: %s%n", x);
         }
 
         // save properties
@@ -214,7 +247,7 @@ public class FileServer implements IFileServer{
             udpPort = Integer.parseInt(properties.get("proxy.udp.port"));
         }
         catch (Exception x) {
-            System.err.println("Error: Your config file for the server " +
+            System.err.println("FileServer::readConfigFile: Error: Your config file for the server " +
                                name + " is corrupted. Make sure you have " +
                                "supplied all necessary variables.");
             return 1;
@@ -233,14 +266,14 @@ public class FileServer implements IFileServer{
             return (credits >= Files.size(path));
         }
         catch (IOException x){
-            System.err.println("Ex: testEnoughCredits: IOException caught");
+            System.err.println("FileServer::readConfigFile: Ex: testEnoughCredits: IOException caught");
             return false;
         }
     }
 
 
     
-    private static class KeepAliveThread implements Runnable {
+    private class KeepAliveThread implements Runnable {
         /**
          * member variables
          */
@@ -266,7 +299,7 @@ public class FileServer implements IFileServer{
         public void run() {
             // configure connection
             try {
-                DatagramSocket socket = new DatagramSocket();
+                DatagramSocket aliveSocket = new DatagramSocket();
                 
                 String msg = new String(String.valueOf(tcpPort));
                 byte[] buf = new byte[msg.length()];
@@ -278,22 +311,22 @@ public class FileServer implements IFileServer{
                     new DatagramPacket(buf, buf.length, address, udpPort); 
 
                 // send keep alive      
-                // TODO: make it infinite
-                for(int i=0; i < 5; i = i + 1) {
-                    socket.send(packet);
+                while(!Thread.interrupted()){
+                    aliveSocket.send(packet);
                     Thread.sleep(alivePeriod);
                 }
-                // close socket
-                socket.close();
+                // close aliveSocket
+                aliveSocket.close();
             }
             catch (InterruptedException x) {
-                System.out.println("Ex: Interrupt Exception thrown.");
+                System.out.println("KeepAliveThread::run: Ex: Interrupt Exception thrown.");
             }
             catch (IOException x) {
-                System.out.println("Ex: IO Exception thrown.");
+                System.out.println("KeepAliveThread::run: Ex: IO Exception thrown.");
             }
         }
     }
+
 
     private class ProxyConnection implements Runnable {
         /** 
@@ -337,9 +370,28 @@ public class FileServer implements IFileServer{
                 clientSocket.close();
             }
             catch (IOException x) {
-                System.err.println("Ex: Caugth IOException");
+                System.err.println("ProxyConnection::run: Ex: Caugth IOException");
             }
+            catch (Exception x) {
+                System.err.println("ProxyConnection::run: Ex: " + x.getMessage());
+            }
+        }
+    }
 
+    class FileServerCommands {
+        @Command
+        public void exit() throws IOException {
+            System.out.println("Exiting shell.");
+            shell.close();
+            System.in.close();
+            // stop threads
+            stop = true;
+            serverSocket.close();
+      }
+
+        @Command
+        public void muh() throws IOException {
+            System.out.println("muuuhhh");
         }
     }
 }
