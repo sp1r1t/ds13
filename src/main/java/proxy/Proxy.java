@@ -328,10 +328,8 @@ serverSocket.close();*/
                 try{
                     while(true) {
                         aliveSocket.receive(packet);
-                        wrapper = ByteBuffer.wrap(packet.getData());
-                        Integer port = wrapper.getInt();
-                        System.out.println("FS offset: " + packet.getOffset());
-                        System.out.println("FS port: " + port);
+                        String data = new String(packet.getData());
+                        System.out.println("FS data: " + data);
                     } 
                 } catch (IOException x) {
                     System.err.println("KeepAliveListenerThread::run: " +

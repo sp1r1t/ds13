@@ -32,6 +32,7 @@ import java.nio.file.Paths;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.charset.Charset;
+import java.nio.ByteBuffer;
 
 import java.net.*;
 
@@ -279,9 +280,12 @@ public class FileServer implements IFileServer{
         pool.shutdownNow();
         
         // close sockets
-        serverSocket.close();
-        clientSocket.close();
-        aliveSocket.close();
+        if(serverSocket != null)
+            serverSocket.close();
+        if(clientSocket != null)
+            clientSocket.close();
+        if(aliveSocket != null)
+            aliveSocket.close();
     }
 
     
@@ -313,10 +317,12 @@ public class FileServer implements IFileServer{
             try {
                 aliveSocket = new DatagramSocket();
                 
+                // ByteBuffer.allocate(4).putInt(1695609641).array();
+
                 String msg = new String(String.valueOf(tcpPort));
                 byte[] buf = new byte[msg.length()];
                 buf = msg.getBytes();
-                
+
                 InetAddress address = InetAddress.getByName(proxy);
                 
                 DatagramPacket packet = 
