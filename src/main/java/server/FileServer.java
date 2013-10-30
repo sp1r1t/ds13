@@ -161,7 +161,7 @@ public class FileServer implements IFileServer{
         // start shell
         System.out.println("Starting the shell.");
         shell = new Shell(name, System.out, System.in);
-        shell.register(new FileServerCommands());
+        shell.register(new FileServerCli());
         Thread shellThread = new Thread(shell);
         pool.submit(shellThread);
 
@@ -173,6 +173,7 @@ public class FileServer implements IFileServer{
         } 
         catch (IOException x) {
             System.out.println("FileServer::run: Could not listen on port: " + tcpPort);
+            
         }
 
         // accept connection
@@ -325,6 +326,18 @@ public class FileServer implements IFileServer{
                 System.out.println("KeepAliveThread::run: Ex: IO Exception thrown.");
             }
         }
+
+        /**
+         * clean exit
+         */
+        protected void cleanExit() {
+            // stop threads
+            pool.shutdownNow();
+
+            // close sockets
+            serverSocket.close();
+            aliveSocket.close();
+         }
     }
 
 
@@ -379,7 +392,7 @@ public class FileServer implements IFileServer{
         }
     }
 
-    class FileServerCommands {
+    class FileServerCli {
         @Command
         public void exit() throws IOException {
             System.out.println("Exiting shell.");
@@ -390,13 +403,9 @@ public class FileServer implements IFileServer{
             // close Syste.in (blocking)
             System.in.close();
             
-            // stop threads
-            pool.shutdownNow();
-
-            // close sockets
-            serverSocket.close();
-            aliveSocket.close();
-      }
+            // do remaining clean up
+            cleanExit();
+        }
 
         @Command
         public void muh() throws IOException {
