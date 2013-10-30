@@ -50,8 +50,11 @@ public class FileServer implements IFileServer{
     // name of the server
     private String name;
 
-    // tcp socket for proxy and client connections
+    // tcp socket for proxy connection
     protected ServerSocket serverSocket;
+
+    // tcp socket to liste for clients
+    protected Socket clientSocket;
 
     // udp socket for alive packages
     protected DatagramSocket aliveSocket;
@@ -177,7 +180,7 @@ public class FileServer implements IFileServer{
         }
 
         // accept connection
-        Socket clientSocket = null;
+        clientSocket = null;
         int i = 0;
         try {
             while(true) {
@@ -270,6 +273,18 @@ public class FileServer implements IFileServer{
         }
     }
 
+    /**
+     * clean exit
+     */
+    public void cleanExit() throws IOException {
+        // stop threads
+        pool.shutdownNow();
+        
+        // close sockets
+        serverSocket.close();
+        clientSocket.close();
+        aliveSocket.close();
+    }
 
     
     private class KeepAliveThread implements Runnable {
@@ -327,17 +342,6 @@ public class FileServer implements IFileServer{
             }
         }
 
-        /**
-         * clean exit
-         */
-        protected void cleanExit() {
-            // stop threads
-            pool.shutdownNow();
-
-            // close sockets
-            serverSocket.close();
-            aliveSocket.close();
-         }
     }
 
 
@@ -404,7 +408,7 @@ public class FileServer implements IFileServer{
             System.in.close();
             
             // do remaining clean up
-            cleanExit();
+            FileServer.this.cleanExit();
         }
 
         @Command
