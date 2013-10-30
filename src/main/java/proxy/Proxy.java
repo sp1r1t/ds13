@@ -21,6 +21,9 @@ import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.MissingResourceException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -68,11 +71,11 @@ public class Proxy implements IProxy{
     // a list of all fileservers
     protected ArrayList<Integer> fileservers;
 
-    // a list of all threads;
-    protected ArrayList<Thread> threads;
-
     // the proxy shell
     protected Shell shell;
+
+    // the thread pool
+    protected ExecutorService pool;
 
 
     //* everything below is read from the config file *//
@@ -130,7 +133,6 @@ public class Proxy implements IProxy{
 
         // create lists
         users = new ArrayList<User>();
-        threads = new ArrayList<Thread>();
 
         System.err.println(name + " configured, starting services.");
         
@@ -185,21 +187,23 @@ public class Proxy implements IProxy{
         // read user config
         readUserConfig();
 
+        // create excutor service
+        pool = Executors.newFixedThreadPool(10);
+
         // give birth to shell thread and start it
         shell = new Shell(name, System.out, System.in);
         shell.register(new ProxyCli());
         Thread shellThread = new Thread(shell);
         shellThread.setName("shellThread");
         System.err.println("Proxy::run: Starting the shell.");
-        shellThread.start();
+        pool.submit(shellThread);
 
         // give birth to alive thread and start it
         Thread keepAliveListener = new Thread(new KeepAliveListenerThread());
         keepAliveListener.setName("keepAliveListener");
-        threads.add(keepAliveListener);
         System.err.println("Proxy::run: Starting to listen for keep alive " +
                            "messages.");
-        keepAliveListener.start();
+        pool.submit(keepAliveListener);
 
 
 /*
@@ -270,7 +274,7 @@ serverSocket.close();*/
                     if(m.matches())
                     {
                         Scanner scanner = new Scanner(line);
-                        String username = scanner.findInLine("^[a-z0-9]*");
+                        String username = scanner.findInLine("^[a-zA-Z0-9]*");
                         usernames.add(username);
                     }
 
@@ -439,14 +443,13 @@ serverSocket.close();*/
             // close System.in (blocking)
             System.in.close();
 
-            // stop threads
-            for(Thread t : threads) {
-                t.interrupt();
-            }
-
             // close sockets
             //serverSocket.close();
             aliveSocket.close();
+
+            // stop threads
+            pool.shutdown();
+
             return new MessageResponse("Shutdown proxy.");
         }
 

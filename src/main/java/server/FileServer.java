@@ -17,6 +17,10 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.MissingResourceException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -46,10 +50,15 @@ public class FileServer implements IFileServer{
     // name of the server
     private String name;
 
-    // stop signal
-    private boolean stop = false;
+    // tcp socket for proxy and client connections
+    protected ServerSocket serverSocket;
 
-    protected ServerSocket serverSocket = null;
+    // udp socket for alive packages
+    protected DatagramSocket aliveSocket;
+
+    // the thread pool
+    protected ExecutorService pool;
+
 
     // everything below is read from the config file
 
@@ -141,20 +150,20 @@ public class FileServer implements IFileServer{
      * Entry function for running the services
      */
     private void run() throws IOException {
-        ArrayList<Thread> threads = new ArrayList<Thread>();
+        // create executor service
+        pool = Executors.newFixedThreadPool(10);
 
         // start thread to send keep_alive msgs
         Thread keepAlive = new Thread
             (new KeepAliveThread(udpPort, proxy, alivePeriod, tcpPort));
-        keepAlive.start();
-        threads.add(keepAlive);
+        pool.submit(keepAlive);
 
         // start shell
         System.out.println("Starting the shell.");
         shell = new Shell(name, System.out, System.in);
         shell.register(new FileServerCommands());
         Thread shellThread = new Thread(shell);
-        shellThread.start();
+        pool.submit(shellThread);
 
 
         // start listening for connections
@@ -162,40 +171,29 @@ public class FileServer implements IFileServer{
         try {
             serverSocket = new ServerSocket(tcpPort);
         } 
-        catch (IOException e) {
+        catch (IOException x) {
             System.out.println("FileServer::run: Could not listen on port: " + tcpPort);
         }
 
         // accept connection
         Socket clientSocket = null;
         int i = 0;
-        while(!stop) {
-            System.out.println("Waiting for " + i + ". client.");
-            try {
+        try {
+            while(true) {
+                System.out.println("Waiting for " + i + ". client.");
                 clientSocket = serverSocket.accept();
-            } 
-            catch (IOException e) {
-                System.out.println("FileServer::run: Accept failed: " + tcpPort);
+                
+                Thread con = new Thread(new ProxyConnection(clientSocket));
+                con.setName("ProxyConnection" + i);
+                pool.submit(con);
+                i = i + 1;
             }
-            
-            Thread con = new Thread(new ProxyConnection(clientSocket));
-            con.setName("ProxyConnection" + i);
-            con.start();
-            threads.add(con);
-            i = i + 1;
-        }
-
-        // stop threads
-        while(!threads.isEmpty()) {
-            Thread cur = threads.get(0);
-            if(cur != null) {
-                cur.interrupt();
-            }
-            threads.remove(0);
+        } catch (IOException x) {
+            System.err.println("FileServer::run: Interrupted. Stopping...");
         }
 
         // close socket
-        serverSocket.close();
+        // serverSocket.close(); // done in exit()
     }
 
     /**
@@ -299,7 +297,7 @@ public class FileServer implements IFileServer{
         public void run() {
             // configure connection
             try {
-                DatagramSocket aliveSocket = new DatagramSocket();
+                aliveSocket = new DatagramSocket();
                 
                 String msg = new String(String.valueOf(tcpPort));
                 byte[] buf = new byte[msg.length()];
@@ -309,17 +307,19 @@ public class FileServer implements IFileServer{
                 
                 DatagramPacket packet = 
                     new DatagramPacket(buf, buf.length, address, udpPort); 
-
-                // send keep alive      
-                while(!Thread.interrupted()){
-                    aliveSocket.send(packet);
-                    Thread.sleep(alivePeriod);
+                
+                try {
+                    // send keep alive      
+                    while(true){
+                        aliveSocket.send(packet);
+                        Thread.sleep(alivePeriod);
+                    }
+                } catch (InterruptedException x) {
+                    System.err.println("KeepAliveThread::run: " +
+                                       "Interrupted. closing...");
                 }
                 // close aliveSocket
-                aliveSocket.close();
-            }
-            catch (InterruptedException x) {
-                System.out.println("KeepAliveThread::run: Ex: Interrupt Exception thrown.");
+                // aliveSocket.close(); // done in exit
             }
             catch (IOException x) {
                 System.out.println("KeepAliveThread::run: Ex: IO Exception thrown.");
@@ -367,7 +367,8 @@ public class FileServer implements IFileServer{
                 // clean up
                 out.close();
                 in.close();
-                clientSocket.close();
+                
+                // clientSocket.close(); // done in exit()
             }
             catch (IOException x) {
                 System.err.println("ProxyConnection::run: Ex: Caugth IOException");
@@ -382,11 +383,19 @@ public class FileServer implements IFileServer{
         @Command
         public void exit() throws IOException {
             System.out.println("Exiting shell.");
+            
+            // close shell
             shell.close();
+            
+            // close Syste.in (blocking)
             System.in.close();
+            
             // stop threads
-            stop = true;
+            pool.shutdownNow();
+
+            // close sockets
             serverSocket.close();
+            aliveSocket.close();
       }
 
         @Command
