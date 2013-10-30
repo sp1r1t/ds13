@@ -42,7 +42,7 @@
 	</target>
 
 	<target name="run-proxy" depends="compile" description="Run proxy.">
-		<java classname="your.Proxy" fork="true" classpathref="project.classpath" />
+		<java classname="proxy.Proxy" fork="true" classpathref="project.classpath" />
 	</target>
 
 	<target name="run-fileserver1" depends="compile" description="Run 1st fileserver.">
