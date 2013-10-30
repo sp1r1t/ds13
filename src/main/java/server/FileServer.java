@@ -176,21 +176,19 @@ public class FileServer implements IFileServer{
         } 
         catch (IOException x) {
             System.out.println("FileServer::run: Could not listen on port: " + tcpPort);
-            
+            cleanExit();
+            return;
         }
 
         // accept connection
-        clientSocket = null;
-        int i = 0;
         try {
-            while(true) {
+            for(int i = 0;; i = i +1) {
                 System.out.println("Waiting for " + i + ". client.");
                 clientSocket = serverSocket.accept();
                 
                 Thread con = new Thread(new ProxyConnection(clientSocket));
                 con.setName("ProxyConnection" + i);
                 pool.submit(con);
-                i = i + 1;
             }
         } catch (IOException x) {
             System.err.println("FileServer::run: Interrupted. Stopping...");
