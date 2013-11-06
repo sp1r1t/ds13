@@ -13,6 +13,7 @@
 		<pathelement location="${build.dir}" />
 		<pathelement location="lib/hamcrest-core-1.3.jar" />
 		<pathelement location="lib/junit-4.11.jar" />
+		<pathelement location="lib/log4j-1.2.17.jar" />
 	</path>
 
 	<target name="compile" description="Compile project.">
