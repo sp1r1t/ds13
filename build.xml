@@ -55,7 +55,7 @@
 	</target>
 
 	<target name="run-client" depends="compile" description="Run client.">
-		<java classname="your.Client" fork="true" classpathref="project.classpath" />
+		<java classname="client.Client" fork="true" classpathref="project.classpath" />
 	</target>
 
 	<target name="clean" description="Clean build products.">

@@ -21,6 +21,7 @@ import java.util.Iterator;
 import java.util.MissingResourceException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.ExecutionException;
 
@@ -53,7 +54,6 @@ public class FileServer implements IFileServer{
     /**
      * private variables
      */
-    protected ServerSocket serverSocket;
     // name of the server
     private String name;
 
@@ -63,7 +63,7 @@ public class FileServer implements IFileServer{
     // logger
     private static Logger logger;
 
-    // shell
+    // the fileserver shell
     private Shell shell;
 
     // everything below is read from the config file
@@ -102,12 +102,31 @@ public class FileServer implements IFileServer{
         BasicConfigurator.configure();
         logger.debug("Logger is set up.");
 
-        Config config = new Config(name);
-        alivePeriod = config.getInt("fileserver.alive");
-        dir = config.getString("fileserver.dir");
-        tcpPort = config.getInt("tcp.port");
-        proxy = config.getString("proxy.host");
-        udpPort = config.getInt("proxy.udp.port");
+        // read config
+        String key = name;
+        try {
+            Config config = new Config(name);
+            key = "fileserver.alive";
+            alivePeriod = config.getInt(key);
+            key = "fileserver.dir";
+            dir = config.getString(key);
+            key = "tcp.port";
+            tcpPort = config.getInt(key);
+            key = "proxy.host";
+            proxy = config.getString(key);
+            key = "proxy.udp.port";
+            udpPort = config.getInt(key);
+        } catch (MissingResourceException x) {
+            if(key == name) {
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
+            } else {
+                logger.fatal("Key " + key + " is not defined.");
+            }
+            System.exit(1);
+        }
+
+        
         
 /*        if(readConfigFile() != 0) {
             System.err.println("FATAL: stopping server");
@@ -161,24 +180,21 @@ public class FileServer implements IFileServer{
         // create executor service
         pool = Executors.newFixedThreadPool(10);
 
-        // start thread to send keep_alive msgs
+        // start thread to send keep alive msgs
         logger.info("Starting KeepAlive");
-        Thread keepAlive = new Thread
-            (new KeepAlive(udpPort, proxy, alivePeriod, tcpPort));
+        KeepAlive keepAlive = new KeepAlive(udpPort, proxy, alivePeriod, tcpPort);
         pool.submit(keepAlive);
 
         // start shell
         logger.info("Starting the shell.");
         shell = new Shell(name, System.out, System.in);
         shell.register(new FileServerCli());
-        //Thread shellThread = new Thread(shell);
-        FutureTask<String> shellFuture = new FutureTask<String>(shell, "future task askes: sup?");
-        pool.submit(shellFuture);
+        Future shellfuture = pool.submit(shell);
 
 
         // start ProxyConnectionListener
         logger.info("Starting ProxyConnectionListener");
-        Thread PCL = new Thread(new ProxyConnectionListener());
+        ProxyConnectionListener PCL = new ProxyConnectionListener();
         pool.submit(PCL);
 
 
@@ -188,18 +204,20 @@ public class FileServer implements IFileServer{
         // e.g. if the keepAlive thread fails due to network problems this can
         // be handled here. or other maintainance stuff that may come.
         try {
-            logger.debug(shellFuture.get());
-        } catch (ExecutionException x) {
-            logger.info(x.getMessage());
+            shellfuture.get();
         } catch (InterruptedException x) {
-            logger.info(x.getMessage());
+            logger.info("Caught interrupt while waiting for shell.");
+        } catch (ExecutionException x) {
+            logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }
-        
+
         // clean up threads
         pool.shutdownNow();
-        serverSocket.close();
-        
-        logger.info("closing main");
+        ServerSocket serverSocket = PCL.getServerSocket();
+        if(serverSocket != null)
+            serverSocket.close(); // throws io exc in proxy con listener
+
+        logger.info("Closing main");
     }
 
     /**
@@ -359,7 +377,7 @@ public class FileServer implements IFileServer{
 
     private class ProxyConnectionListener implements Runnable {
         Logger logger;
-        //ServerSocket serverSocket;
+        ServerSocket serverSocket;
 
         public ProxyConnectionListener() {
             logger = Logger.getLogger(ProxyConnectionListener.class);
@@ -400,6 +418,10 @@ public class FileServer implements IFileServer{
                 logger.info("Caught IOException on closing socket");
             }
             logger.info("Shutting down.");
+        }
+
+        public ServerSocket getServerSocket() {
+            return serverSocket;
         }
     }
 

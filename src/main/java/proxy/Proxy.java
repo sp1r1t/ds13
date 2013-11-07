@@ -23,7 +23,8 @@ import java.util.Iterator;
 import java.util.MissingResourceException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
-
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -46,12 +47,15 @@ import util.Config;
 
 import proxy.User;
 
+import org.apache.log4j.Logger;
+import org.apache.log4j.BasicConfigurator;
+
 /**
  * The Proxy
  */
 public class Proxy implements IProxy{
     /**
-     * private variables
+     * member variables
      */
     // name of the server
     private String name;
@@ -59,11 +63,8 @@ public class Proxy implements IProxy{
     // stop signal
     private boolean stop = false;
 
-    // udp socket for alive packages
-    protected DatagramSocket aliveSocket;
-
-    // tcp socket for client connections
-    protected ServerSocket serverSocket;
+    // logger
+    private static Logger logger;
 
     // a list of all users
     protected ArrayList<User> users;
@@ -107,6 +108,11 @@ public class Proxy implements IProxy{
         // set name
         this.name = name;
 
+        // set up logger
+        logger = Logger.getLogger(Proxy.class);
+        BasicConfigurator.configure();
+        logger.debug("Logger is set up.");
+
         // read config
         String key = name;
         try {
@@ -122,11 +128,10 @@ public class Proxy implements IProxy{
         }
         catch (MissingResourceException x) {
             if(key == name) {
-            System.err.println("Proxy::Proxy: [Fatal] Config " + 
-                               key + ".properties does not exist.");
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
             } else {
-            System.err.println("Proxy::Proxy: [Fatal] Key " + 
-                               key + " is not defined.");
+                logger.fatal("Key " + key + " is not defined.");
             }
             System.exit(1);
         }
@@ -134,13 +139,13 @@ public class Proxy implements IProxy{
         // create lists
         users = new ArrayList<User>();
 
-        System.err.println(name + " configured, starting services.");
+        logger.info(name + " configured, starting services.");
         
         try {
             run();
         }
         catch (IOException x) {
-            System.err.println("Proxy::Proxy Ex: Caught IOException");
+            logger.info("Caught IOException");
         }
             
     }
@@ -187,65 +192,45 @@ public class Proxy implements IProxy{
         // read user config
         readUserConfig();
 
-        // create excutor service
+        // create thread pool
         pool = Executors.newFixedThreadPool(10);
 
         // give birth to shell thread and start it
         shell = new Shell(name, System.out, System.in);
         shell.register(new ProxyCli());
-        Thread shellThread = new Thread(shell);
-        shellThread.setName("shellThread");
-        System.err.println("Proxy::run: Starting the shell.");
-        pool.submit(shellThread);
+        logger.info("Starting the shell.");
+        Future shellfuture = pool.submit(shell);
 
-        // give birth to alive thread and start it
-        Thread keepAliveListener = new Thread(new KeepAliveListenerThread());
-        keepAliveListener.setName("keepAliveListener");
-        System.err.println("Proxy::run: Starting to listen for keep alive " +
-                           "messages.");
+        // give birth to alive thread listener and start it
+        KeepAliveListener keepAliveListener = new KeepAliveListener();
+        logger.info("Starting to listen for keep alive messages.");
         pool.submit(keepAliveListener);
 
+        // create client connection listener
+        ClientConnectionListener CCL = new ClientConnectionListener();
+        logger.info("Starting to listen for client connections.");
+        pool.submit(CCL);
 
-/*
-// start listening for connections
-System.out.println("Creating server socket.");
-try {
-serverSocket = new ServerSocket(tcpPort);
-} 
-catch (IOException e) {
-System.out.println("FileServer::run: Could not listen on port: " + tcpPort);
-}
+        // for now join shell
+        try {
+            shellfuture.get();
+        } catch (InterruptedException x) {
+            logger.info("Caught interrupt while waiting for shell.");
+        } catch (ExecutionException x) {
+            logger.info("Caught ExecutionExcpetion while waiting for shell.");
+        }
 
-// accept connection
-Socket clientSocket = null;
-int i = 0;
-while(!stop) {
-System.out.println("Waiting for " + i + ". client.");
-try {
-clientSocket = serverSocket.accept();
-} 
-catch (IOException e) {
-System.out.println("FileServer::run: Accept failed: " + tcpPort);
-}
-            
-Thread con = new Thread(new ProxyConnection(clientSocket));
-con.setName("ProxyConnection" + i);
-con.start();
-threads.add(con);
-i = i + 1;
-}
+        // clean up
+        pool.shutdownNow();
+        DatagramSocket aliveSocket = keepAliveListener.getAliveSocket();
+        if(aliveSocket != null)
+            aliveSocket.close(); // throws io exc in alive listener
+        ServerSocket serverSocket = CCL.getServerSocket();
+        if(serverSocket != null)
+            serverSocket.close(); // throws io exc in ccl
 
-// stop threads
-while(!threads.isEmpty()) {
-Thread cur = threads.get(0);
-if(cur != null) {
-cur.interrupt();
-}
-threads.remove(0);
-}
 
-// close socket
-serverSocket.close();*/
+        logger.info("Closing main");
     }
 
     /**
@@ -265,7 +250,7 @@ serverSocket.close();*/
                 Pattern p = Pattern.compile("^[a-z0-9]*[.].*");
 
                 // read file
-                System.err.println("Reading user config.");
+                logger.info("Reading user config.");
                 while(reader.ready()) {
                     String line = reader.readLine();
                     Matcher m = p.matcher(line);
@@ -281,7 +266,7 @@ serverSocket.close();*/
                 }
             }
         catch (IOException x) {
-            System.err.format("FileServer::readConfigFile: IOException: %s%n", x);
+            logger.info("IOException: %s%n", x);
         }
 
         // create user db
@@ -290,7 +275,7 @@ serverSocket.close();*/
         try{
             while(it.hasNext()) {
                 String username = it.next();
-                System.out.println("Adding user " + username);
+                logger.info("Adding user " + username);
                 users.add(new User(username,
                                    config.getString(username + ".password"),
                                    config.getInt(username + ".credits")));
@@ -299,7 +284,7 @@ serverSocket.close();*/
             }
         }
         catch (Exception x) {
-            System.err.println("FileServer::readConfigFile: Error: Your user config " +
+            logger.error("Your user config " +
                                "is corrupted. Make sure you have " +
                                "supplied all necessary variables.");
             return 1;
@@ -307,11 +292,18 @@ serverSocket.close();*/
         return 0;
     }
 
-    private class KeepAliveListenerThread implements Runnable {
+    private class KeepAliveListener implements Runnable {
+        /** 
+         * Member variables
+         */
+        private Logger logger;
+        private DatagramSocket aliveSocket;
+
         /**
          * Constructor
          */
-        public KeepAliveListenerThread(){
+        public KeepAliveListener(){
+            logger = Logger.getLogger(KeepAliveListener.class);
         }
 
         /**
@@ -325,58 +317,92 @@ serverSocket.close();*/
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);
                 ByteBuffer wrapper;
 
+                logger.info("Starting to listen for packets.");
                 try{
                     while(true) {
                         aliveSocket.receive(packet);
                         String data = new String(packet.getData());
-                        System.out.println("FS data: " + data);
+                        logger.info("FS data: " + data);
                     } 
                 } catch (IOException x) {
-                    System.err.println("KeepAliveListenerThread::run: " +
-                                       "Interrupted. closing...");
+                    logger.info("Interrupted. closing...");
                 }
-
-                aliveSocket.close();
-
-/*        // FS code
-          String msg = new String(String.valueOf(tcpPort));
-          byte[] buf = new byte[msg.length()];
-          buf = msg.getBytes();
-                
-          InetAddress address = InetAddress.getByName(proxy);
-                
-          DatagramPacket packet = 
-          new DatagramPacket(buf, buf.length, address, udpPort); 
-
-          // send keep alive      
-          while(!Thread.interrupted()){
-          aliveSocket.send(packet);
-          Thread.sleep(alivePeriod);
-          }
-          // close aliveSocket
-          aliveSocket.close();
-
-*/
-
             }
             catch (IOException x) {
-                System.out.println("KeepAliveThread::run: Ex: IO Exception thrown.");
+                logger.info("IO Exception thrown.");
             }
+            if(aliveSocket != null)
+                aliveSocket.close();
+        }
+        
+        public DatagramSocket getAliveSocket() {
+            return aliveSocket;
+        }
+    }
+
+    private class ClientConnectionListener implements Runnable {
+        Logger logger;
+        ServerSocket serverSocket;
+
+        public ClientConnectionListener() {
+            logger = Logger.getLogger(ClientConnectionListener.class);
+        }
+
+        /**
+         * run method
+         */
+        public void run() {
+            // start listening for connections
+            logger.info("Creating server socket.");
+            try {
+                serverSocket = new ServerSocket(tcpPort);
+            } 
+            catch (IOException x) {
+                logger.warn("Could not listen on port: " + tcpPort);
+                return;
+            }
+
+            // accept connection
+            try {
+                for(int i = 1;; i = i+1) {
+                    logger.debug("Waiting for " + i + ". client.");
+                
+                    Socket clientSocket = serverSocket.accept();
+                    ClientConnection con = new ClientConnection(clientSocket);
+                    pool.submit(con);
+                }
+            } catch (IOException x) {
+                logger.info("Interrupted. Stopping...");
+            }
+
+            // cleanup
+            try {
+                serverSocket.close();
+            } catch (IOException x) {
+                logger.info("Caught IOException on closing socket");
+            }
+            logger.info("Shutting down.");
+        }
+
+        public ServerSocket getServerSocket() {
+            return serverSocket;
         }
     }
 
 
-    private class ProxyConnection implements Runnable {
+    private class ClientConnection implements Runnable {
         /** 
          * member variables
          */
-        Socket clientSocket;
+        private Socket clientSocket;
+        private Logger logger;
 
         /** 
          * Constructor
          */
-        public ProxyConnection(Socket clientSocket) {
+        public ClientConnection(Socket clientSocket) {
             this.clientSocket = clientSocket;
+            logger = Logger.getLogger(ClientConnection.class);
         }
 
         /**
@@ -396,6 +422,7 @@ serverSocket.close();*/
                 out.println(outputLine);
                 
                 while ((inputLine = in.readLine()) != null) {   
+                    logger.debug("got: " + inputLine);
                     outputLine = "cool";
                     out.println(outputLine);
                     if (inputLine.equals("bye"))
@@ -405,18 +432,28 @@ serverSocket.close();*/
                 // clean up
                 out.close();
                 in.close();
-                clientSocket.close();
             }
             catch (IOException x) {
-                System.err.println("ProxyConnection::run: Ex: Caugth IOException");
+                logger.info("Caught IOException.");
             }
             catch (Exception x) {
-                System.err.println("ProxyConnection::run: Ex: " + x.getMessage());
+                logger.info(x.getMessage());
+            }
+            try {
+                clientSocket.close();
+            } catch (IOException x) {
+                logger.info("Caught IOException.");
             }
         }
     }
 
     class ProxyCli implements IProxyCli {
+        private Logger logger;
+
+        public ProxyCli() {
+            logger = Logger.getLogger(ProxyCli.class);
+        }
+
         @Command
         public Response fileservers() throws IOException {
             System.out.println("TODO: list fileservers");
@@ -433,20 +470,13 @@ serverSocket.close();*/
 
         @Command
         public MessageResponse exit() throws IOException {
-            System.out.println("ProxyCli::exit: Exiting shell.");
+            logger.info("Exiting shell.");
 
             // close shell
             shell.close();
             
             // close System.in (blocking)
             System.in.close();
-
-            // close sockets
-            //serverSocket.close();
-            aliveSocket.close();
-
-            // stop threads
-            pool.shutdown();
 
             return new MessageResponse("Shutdown proxy.");
         }
