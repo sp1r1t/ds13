@@ -21,6 +21,8 @@ import java.util.Iterator;
 import java.util.MissingResourceException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.ExecutionException;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -51,14 +53,9 @@ public class FileServer implements IFileServer{
     /**
      * private variables
      */
+    protected ServerSocket serverSocket;
     // name of the server
     private String name;
-
-    // tcp socket for proxy connection
-    protected ServerSocket serverSocket;
-
-    // tcp socket to liste for clients
-    protected Socket clientSocket;
 
     // the thread pool
     protected ExecutorService pool;
@@ -68,7 +65,6 @@ public class FileServer implements IFileServer{
 
     // shell
     private Shell shell;
-
 
     // everything below is read from the config file
 
@@ -166,45 +162,43 @@ public class FileServer implements IFileServer{
         pool = Executors.newFixedThreadPool(10);
 
         // start thread to send keep_alive msgs
+        logger.info("Starting KeepAlive");
         Thread keepAlive = new Thread
-            (new KeepAliveThread(udpPort, proxy, alivePeriod, tcpPort));
+            (new KeepAlive(udpPort, proxy, alivePeriod, tcpPort));
         pool.submit(keepAlive);
 
         // start shell
         logger.info("Starting the shell.");
         shell = new Shell(name, System.out, System.in);
         shell.register(new FileServerCli());
-        Thread shellThread = new Thread(shell);
-        pool.submit(shellThread);
+        //Thread shellThread = new Thread(shell);
+        FutureTask<String> shellFuture = new FutureTask<String>(shell, "future task askes: sup?");
+        pool.submit(shellFuture);
 
-/*
-        // start listening for connections
-        logger.info("Creating server socket.");
-        try {
-            serverSocket = new ServerSocket(tcpPort);
-        } 
-        catch (IOException x) {
-            logger.warn("Could not listen on port: " + tcpPort);
-            cleanExit();
-            return;
-        }
 
-        // accept connection
+        // start ProxyConnectionListener
+        logger.info("Starting ProxyConnectionListener");
+        Thread PCL = new Thread(new ProxyConnectionListener());
+        pool.submit(PCL);
+
+
+        // for now just join the shell. the main thread is kept alive to 
+        // possibly implement respawning of unintenionally cancelled threads 
+        // in the future.
+        // e.g. if the keepAlive thread fails due to network problems this can
+        // be handled here. or other maintainance stuff that may come.
         try {
-            for(int i = 0;; i = i +1) {
-                logger.debug("Waiting for " + i + ". client.");
-                clientSocket = serverSocket.accept();
-                
-                Thread con = new Thread(new ProxyConnection(clientSocket));
-                con.setName("ProxyConnection" + i);
-                pool.submit(con);
-            }
-        } catch (IOException x) {
-            logger.info("Interrupted. Stopping...");
+            logger.debug(shellFuture.get());
+        } catch (ExecutionException x) {
+            logger.info(x.getMessage());
+        } catch (InterruptedException x) {
+            logger.info(x.getMessage());
         }
-*/
-        // close socket
-        // serverSocket.close(); // done in exit()
+        
+        // clean up threads
+        pool.shutdownNow();
+        serverSocket.close();
+        
         logger.info("closing main");
     }
 
@@ -285,18 +279,15 @@ public class FileServer implements IFileServer{
      * clean exit
      */
     public void cleanExit() throws IOException {
-        // stop threads
-        pool.shutdownNow();
-        
         // close sockets
-        if(serverSocket != null)
+/*        if(serverSocket != null)
             serverSocket.close();
         if(clientSocket != null)
-            clientSocket.close();
+        clientSocket.close();*/
     }
 
     
-    private class KeepAliveThread implements Runnable {
+    private class KeepAlive implements Runnable {
         /**
          * member variables
          */
@@ -315,10 +306,10 @@ public class FileServer implements IFileServer{
         /**
          * Constructor
          */
-        public KeepAliveThread(int udpPort, String proxy, 
+        public KeepAlive(int udpPort, String proxy, 
                                int alivePeriod, int tcpPort){
             // init logger
-            logger = Logger.getLogger(KeepAliveThread.class);
+            logger = Logger.getLogger(KeepAlive.class);
 
             // init params
             this.udpPort = udpPort;
@@ -333,7 +324,6 @@ public class FileServer implements IFileServer{
         public void run() {
             try {
                 // configure connection
-                logger.debug("starting...");
                 aliveSocket = new DatagramSocket();
                 
                 String msg = new String(String.valueOf(tcpPort));
@@ -348,12 +338,13 @@ public class FileServer implements IFileServer{
                 
                 try {
                     // send keep alive      
+                    logger.debug("Starting to send keep alive messages...");
                     while(true){
                         aliveSocket.send(packet);
                         Thread.sleep(alivePeriod);
                     }
                 } catch (InterruptedException x) {
-                    logger.info("Interrupted. closing...");
+                    logger.info("Recieved interrupt. Closing...");
                 }
 
                 // close aliveSocket
@@ -366,30 +357,79 @@ public class FileServer implements IFileServer{
 
     }
 
+    private class ProxyConnectionListener implements Runnable {
+        Logger logger;
+        //ServerSocket serverSocket;
 
-    private class ProxyConnection implements Runnable {
-        /** 
-         * member variables
-         */
-        Socket clientSocket;
-
-        /** 
-         * Constructor
-         */
-        public ProxyConnection(Socket clientSocket) {
-            this.clientSocket = clientSocket;
+        public ProxyConnectionListener() {
+            logger = Logger.getLogger(ProxyConnectionListener.class);
         }
 
         /**
          * run method
          */
         public void run() {
-            try{
-                // talk
-                PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader
-                    (new InputStreamReader(clientSocket.getInputStream()));
+            // start listening for connections
+            logger.info("Creating server socket.");
+            try {
+                serverSocket = new ServerSocket(tcpPort);
+            } 
+            catch (IOException x) {
+                logger.warn("Could not listen on port: " + tcpPort);
+                return;
+            }
+
+            // accept connection
+            try {
+                for(int i = 1;; i = i+1) {
+                    logger.debug("Waiting for " + i + ". client.");
                 
+                    Socket clientSocket = serverSocket.accept();
+                    Thread con = new Thread(new ProxyConnection(clientSocket));
+                    con.setName("ProxyConnection" + i);
+                    pool.submit(con);
+                }
+            } catch (IOException x) {
+                logger.info("Interrupted. Stopping...");
+            }
+
+            // cleanup
+            try {
+                serverSocket.close();
+            } catch (IOException x) {
+                logger.info("Caught IOException on closing socket");
+            }
+            logger.info("Shutting down.");
+        }
+    }
+
+    private class ProxyConnection implements Runnable {
+        /** 
+         * member variables
+         */
+        Socket clientSocket;
+        Logger logger;
+
+        /** 
+         * Constructor
+         */
+        public ProxyConnection(Socket clientSocket) {
+            this.clientSocket = clientSocket;
+            logger = Logger.getLogger(ProxyConnection.class);
+        }
+
+        /**
+         * run method
+         */
+        public void run() {
+            logger.info("Starting Connection.");
+            try (
+                PrintWriter out = new PrintWriter
+                    (clientSocket.getOutputStream(), true);
+                BufferedReader in = new BufferedReader
+                    (new InputStreamReader(clientSocket.getInputStream()))
+                )
+            {
                 String inputLine, outputLine;
                 
                 // initiate conversation with client
@@ -402,19 +442,17 @@ public class FileServer implements IFileServer{
                     if (inputLine.equals("bye"))
                         break;
                 }
-                
-                // clean up
-                out.close();
-                in.close();
-                
-                // clientSocket.close(); // done in exit()
+            } catch (IOException x) {
+                logger.info("Caught IOException");
+            } finally {
+                try {
+                    clientSocket.close();
+                } catch (IOException x) {
+                    logger.info("Caught IOException while closing socket.");
+                }
             }
-            catch (IOException x) {
-                logger.info("Caugth IOException");
-            }
-            catch (Exception x) {
-                logger.info(x.getMessage());
-            }
+            
+            logger.info("Closed connection.");
         }
     }
 
@@ -434,9 +472,6 @@ public class FileServer implements IFileServer{
             
             // close Syste.in (blocking)
             System.in.close();
-            
-            // do remaining clean up
-            FileServer.this.cleanExit();
             
             return null;
         }
