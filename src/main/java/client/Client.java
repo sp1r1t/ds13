@@ -32,6 +32,8 @@ import java.io.PrintWriter;
 import java.io.InputStreamReader;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -55,7 +57,7 @@ import org.apache.log4j.BasicConfigurator;
 /**
  * The Client
  */
-public class Client implements IClientCli {
+public class Client {
     /**
      * private variables
      */
@@ -69,6 +71,21 @@ public class Client implements IClientCli {
     private String proxy;
 
     private Integer tcpPort;
+
+    private Shell shell;
+    
+    private ExecutorService pool;
+
+    private Socket proxySocket;
+
+    private PrintWriter out;
+    private BufferedReader in;
+
+    private ObjectOutputStream oos;
+    private ObjectInputStream ois;
+
+    private String username;
+    private String password;
 
     /**
      * main function
@@ -114,76 +131,135 @@ public class Client implements IClientCli {
     }
 
     private void run() {
-        Socket proxySocket = null;
+        // set up thread pool
+        pool = Executors.newFixedThreadPool(10);
+
+        // set up shell
+        shell = new Shell(name, System.out, System.in);
+        shell.register(new ClientCli());
+        logger.info("Starting the shell.");
+        Future shellfuture = pool.submit(shell);
+
+        proxySocket = null;
         try {
             proxySocket = new Socket(proxy, tcpPort);
 
-            PrintWriter out = 
-                new PrintWriter(proxySocket.getOutputStream(), true);
+            oos = new ObjectOutputStream(proxySocket.getOutputStream());
+            ois = new ObjectInputStream(proxySocket.getInputStream());
 
-            BufferedReader in = 
-                new BufferedReader(
+            out = new PrintWriter(proxySocket.getOutputStream(), true);
+            in =  new BufferedReader(
                     new InputStreamReader(proxySocket.getInputStream()));
 
-            BufferedReader stdIn = 
-                new BufferedReader(
-                    new InputStreamReader(System.in));
-
-            System.out.println("echo: " + in.readLine());
-            out.println("hi");
-            Thread.sleep(20);
-            System.out.println("echo: " + in.readLine());
-            out.println("bye\n");
-
-            /*
-              String userInput;
-              while ((userInput = stdIn.readLine()) != null) {
-                out.println(userInput);
-                System.out.println("echo: " + in.readLine());
-                }*/
-
-            proxySocket.close();
         } catch(UnknownHostException x) {
             logger.info("Host not known.");
             return;
         } catch(IOException x) {
             logger.info("Caught IOException.");
-        } catch(InterruptedException x) {
-            logger.info("Caught Interrupted");
+        } 
+
+        // for now join shell
+        try {
+            shellfuture.get();
+        } catch (InterruptedException x) {
+            logger.info("Caught interrupt while waiting for shell.");
+        } catch (ExecutionException x) {
+            logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }
+
+        // clean up
+        pool.shutdownNow();
+        try {
+            proxySocket.close();
+        } catch (IOException x) {
+            logger.info("Caught IOException.");
+        }
+
         logger.info("Shutting down.");
     }
 
-    public LoginResponse login(String username, String password)
-        throws IOException {
-        return null;
-    }
+    class ClientCli implements IClientCli {
+        private Logger logger;
 
-    public Response credits() throws IOException {
-        return null;
-    }
+        public ClientCli() {
+            logger = Logger.getLogger(ClientCli.class);
+        }
 
-    public Response buy(long credits) throws IOException {
-        return null;
-    }
+        @Command
+        public LoginResponse login(String username, String password)
+            throws IOException {
+            logger.debug("started login command");
+            logger.debug("username is " + username);
+            logger.debug("password is " + password);
 
-    public Response list() throws IOException {
-        return null;
-    }
+            LoginRequest req = new LoginRequest(username, password);
+            oos.writeObject(req);
 
-    public Response download(String filename) throws IOException {
-        return null;
-    }
+            LoginResponse resp;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof LoginResponse) {
+                    resp = (LoginResponse) o;
+                    logger.debug(resp.getType());
+                    return resp;
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+            return null;
+        }
 
-    public MessageResponse upload(String filename) throws IOException {
-        return null;
-    }
+        @Command
+        public Response credits() throws IOException {
+            return null;
+        }
 
-    public MessageResponse logout() throws IOException {
-        return null;
-    }
+        @Command
+        public Response buy(long credits) throws IOException {
+            return null;
+        }
+
+        @Command
+        public Response list() throws IOException {
+            return null;
+        }
+ 
+        @Command
+        public Response download(String filename) throws IOException {
+            return null;
+        }
+
+        @Command
+        public MessageResponse upload(String filename) throws IOException {
+            return null;
+        }
+
+        @Command
+        public MessageResponse logout() throws IOException {
+            return null;
+        }
     
-    public MessageResponse exit() throws IOException {
-        return null;
+        @Command
+        public MessageResponse exit() throws IOException {
+            logger.info("Exiting shell.");
+
+            // close shell
+            shell.close();
+
+            // close System.in
+            System.in.close();
+
+            return new MessageResponse("Shutdown client.");
+        }
+
+        @Command
+        public void muh() throws IOException {
+            logger.debug("muuuh");
+            // proxy test
+            System.out.println("echo: " + in.readLine());
+            out.println("hi");
+            System.out.println("echo: " + in.readLine());
+            out.println("bye\n");
+        }
     }
 }

@@ -30,6 +30,8 @@ import java.io.IOException;
 import java.io.BufferedReader;
 import java.io.PrintWriter;
 import java.io.InputStreamReader;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -67,31 +69,34 @@ public class Proxy implements IProxy{
     private static Logger logger;
 
     // a list of all users
-    protected ArrayList<User> users;
+    private ArrayList<User> users;
 
     // a list of all fileservers
-    protected ArrayList<Integer> fileservers;
+    private ArrayList<Integer> fileservers;
 
     // the proxy shell
-    protected Shell shell;
+    private Shell shell;
 
     // the thread pool
-    protected ExecutorService pool;
+    private ExecutorService pool;
+
+    // object input stream
+    private ObjectInputStream ois;
 
 
     //* everything below is read from the config file *//
 
     // time interval after which a fileserver is set offline
-    protected Integer timeout;
+    private Integer timeout;
 
     // period in ms to check for timeouts
     private Integer checkPeriod;
 
     // TCP port to listen for clients
-    protected Integer tcpPort;
+    private Integer tcpPort;
 
     // UDP port to listen for keepAlive packages
-    protected Integer udpPort;
+    private Integer udpPort;
 
     /**
      * main function
@@ -410,6 +415,24 @@ public class Proxy implements IProxy{
          */
         public void run() {
             try{
+                ObjectInputStream ois = 
+                    new ObjectInputStream(clientSocket.getInputStream());
+
+                ObjectOutputStream oos = 
+                    new ObjectOutputStream(clientSocket.getOutputStream());
+
+                Object o = ois.readObject();
+                if(o instanceof LoginRequest) {
+                    LoginRequest req = (LoginRequest) o;
+                    logger.debug("username: " + req.getUsername());
+                    logger.debug("password: " + req.getPassword());
+                    LoginResponse resp = new LoginResponse(
+                        LoginResponse.Type.SUCCESS);
+                    oos.writeObject(resp);
+                    logger.debug("sent repsonse.");
+                }
+                    
+                /*
                 // talk
                 PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
                 BufferedReader in = new BufferedReader
@@ -432,6 +455,7 @@ public class Proxy implements IProxy{
                 // clean up
                 out.close();
                 in.close();
+                */
             }
             catch (IOException x) {
                 logger.info("Caught IOException.");
@@ -439,6 +463,7 @@ public class Proxy implements IProxy{
             catch (Exception x) {
                 logger.info(x.getMessage());
             }
+
             try {
                 clientSocket.close();
             } catch (IOException x) {
