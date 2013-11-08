@@ -13,20 +13,27 @@ import message.Request;
  * @see message.response.BuyResponse
  */
 public class BuyRequest implements Request {
-	private static final long serialVersionUID = 8589241767079930421L;
+    private static final long serialVersionUID = 8589241767079930421L;
 
-	private final long credits;
+    private final long credits;
 
-	public BuyRequest(long credits) {
-		this.credits = credits;
-	}
+    private final long sid;
 
-	public long getCredits() {
-		return credits;
-	}
+    public BuyRequest(long credits, long sid) {
+        this.credits = credits;
+        this.sid = sid;
+    }
 
-	@Override
-	public String toString() {
-		return "!buy " + getCredits();
-	}
+    public long getCredits() {
+        return credits;
+    }
+
+    public long getSid() {
+        return sid;
+    }
+
+    @Override
+    public String toString() {
+        return "!buy " + getCredits();
+    }
 }

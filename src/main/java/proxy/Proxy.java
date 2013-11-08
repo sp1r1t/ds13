@@ -1,12 +1,8 @@
 package proxy;
 
 import message.Response;
-import message.request.DownloadFileRequest;
-import message.request.InfoRequest;
-import message.request.UploadRequest;
-import message.request.LoginRequest;
-import message.request.BuyRequest;
-import message.request.DownloadTicketRequest;
+import message.Request;
+import message.request.*;
 import message.response.*;
 
 import model.DownloadTicket;
@@ -25,6 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ExecutionException;
+import java.util.UUID;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -70,6 +67,9 @@ public class Proxy implements IProxy{
 
     // a list of all users
     private ArrayList<User> users;
+
+    // list of logged in users
+    private ArrayList<User> loggedIn;
 
     // a list of all fileservers
     private ArrayList<Integer> fileservers;
@@ -143,6 +143,7 @@ public class Proxy implements IProxy{
 
         // create lists
         users = new ArrayList<User>();
+        loggedIn = new ArrayList<User>();
 
         logger.info(name + " configured, starting services.");
         
@@ -157,7 +158,36 @@ public class Proxy implements IProxy{
 
     @Override
     public LoginResponse login(LoginRequest request) throws IOException {
-        return new LoginResponse(LoginResponse.Type.SUCCESS);
+
+        logger.debug("Got login request: " + request.getUsername()
+                     + ":" + request.getPassword());
+
+        LoginResponse resp = null;
+        for(User u : users) {
+            // search matching user
+            if(u.getName().equals(request.getUsername()) &&
+               u.getPassword().equals(request.getPassword())) {
+                if(u.login()) {
+                    // successfull
+                    // create new session id
+                    UUID sid = UUID.randomUUID();
+                    u.setSid(sid);
+                    resp = new LoginResponse(
+                        LoginResponse.Type.SUCCESS, sid); 
+                } else {
+                    // already logged in
+                    resp = new LoginResponse(
+                        LoginResponse.Type.IS_LOGGED_IN);
+                }
+            }
+        }
+        if(resp == null) {
+            // no user found or wrong creds
+            resp = new LoginResponse(
+                LoginResponse.Type.WRONG_CREDENTIALS);
+        }
+
+        return resp;
     }
 
     @Override
@@ -187,6 +217,8 @@ public class Proxy implements IProxy{
 
     @Override
     public MessageResponse logout() throws IOException {
+        // this is handled in the client connection class
+        // i can't do an argumentless logout with more than one user.
         return new MessageResponse("");
     }
 
@@ -401,6 +433,7 @@ public class Proxy implements IProxy{
          */
         private Socket clientSocket;
         private Logger logger;
+        private User user;
 
         /** 
          * Constructor
@@ -414,61 +447,84 @@ public class Proxy implements IProxy{
          * run method
          */
         public void run() {
-            try{
+            logger.debug(clientSocket.toString());
+            try {
+                // create streams
                 ObjectInputStream ois = 
                     new ObjectInputStream(clientSocket.getInputStream());
-
                 ObjectOutputStream oos = 
                     new ObjectOutputStream(clientSocket.getOutputStream());
 
-                Object o = ois.readObject();
-                if(o instanceof LoginRequest) {
-                    LoginRequest req = (LoginRequest) o;
-                    logger.debug("username: " + req.getUsername());
-                    logger.debug("password: " + req.getPassword());
-                    LoginResponse resp = new LoginResponse(
-                        LoginResponse.Type.SUCCESS);
-                    oos.writeObject(resp);
-                    logger.debug("sent repsonse.");
-                }
+                
+                Request request = null;
+                Response response = null;
+
+                // listen for requests
+                while(!Thread.interrupted()) {
+                    // recieve request
+                    Object o = ois.readObject();
                     
-                /*
-                // talk
-                PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader
-                    (new InputStreamReader(clientSocket.getInputStream()));
-                
-                String inputLine, outputLine;
-                
-                // initiate conversation with client
-                outputLine = "sup?";
-                out.println(outputLine);
-                
-                while ((inputLine = in.readLine()) != null) {   
-                    logger.debug("got: " + inputLine);
-                    outputLine = "cool";
-                    out.println(outputLine);
-                    if (inputLine.equals("bye"))
-                        break;
+                    // LOGIN
+                    if(o instanceof LoginRequest) {
+                        if(user != null) {
+                            response = new LoginResponse
+                                (LoginResponse.Type.IS_LOGGED_IN);
+                        } else {
+                            LoginRequest lreq = (LoginRequest) o;
+                            LoginResponse lresp = login(lreq);
+                            if(lresp.getType() == LoginResponse.Type.SUCCESS) {
+                                UUID sid = lresp.getSid();
+                                user = getUserBySid(sid);
+                            }
+                            response = lresp;
+                        }
+                    }
+                    // LOGOUT
+                    else if (o instanceof LogoutRequest) {
+                        if(user != null) {
+                            logger.debug("Logging out user " + user.getName() +
+                                         ".");
+                            user.logout();
+                            user = null;
+                        }
+                        response = new MessageResponse("Logged out.");
+                    }
+                    // TESTING REQUEST; cow says muh!!
+                    else if (o instanceof String) {
+                        if(user.getSid() == null) {
+                            response = new MessageResponse("Ur not logged in.");
+                        } else {
+                            response = new MessageResponse("Ur in.");
+                        }
+                    }
+                    
+                    // send response back
+                    if(response != null) {
+                        oos.writeObject(response);
+                    }
                 }
-                
-                // clean up
-                out.close();
-                in.close();
-                */
-            }
-            catch (IOException x) {
+            } catch (IOException x) {
                 logger.info("Caught IOException.");
-            }
-            catch (Exception x) {
-                logger.info(x.getMessage());
+            } catch (Exception x) {
+                logger.info("Caught Exception: "); 
+                x.printStackTrace();
             }
 
             try {
+                logger.debug("Closing socket.");
                 clientSocket.close();
             } catch (IOException x) {
                 logger.info("Caught IOException.");
             }
+        }
+
+        private User getUserBySid(UUID sid) {
+            for(User u : users) {
+                if(u.getSid() == sid) {
+                    return u;
+                }
+            }
+            return null;
         }
     }
 

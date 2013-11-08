@@ -1,12 +1,7 @@
 package client;
 
 import message.Response;
-import message.request.DownloadFileRequest;
-import message.request.InfoRequest;
-import message.request.UploadRequest;
-import message.request.LoginRequest;
-import message.request.BuyRequest;
-import message.request.DownloadTicketRequest;
+import message.request.*;
 import message.response.*;
 
 import model.DownloadTicket;
@@ -25,6 +20,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ExecutionException;
+import java.util.UUID;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -84,8 +80,7 @@ public class Client {
     private ObjectOutputStream oos;
     private ObjectInputStream ois;
 
-    private String username;
-    private String password;
+    private UUID sid;
 
     /**
      * main function
@@ -201,7 +196,20 @@ public class Client {
                 if(o instanceof LoginResponse) {
                     resp = (LoginResponse) o;
                     logger.debug(resp.getType());
+                    if(resp.getType() == LoginResponse.Type.SUCCESS) {
+                        sid = resp.getSid();
+                        logger.debug("Got sid " + sid);
+                    } else if (resp.getType() == 
+                               LoginResponse.Type.WRONG_CREDENTIALS) {
+                        logger.debug("Credentials are wrong.");
+                    } else if (resp.getType() ==
+                               LoginResponse.Type.IS_LOGGED_IN) {
+                        logger.debug("Already logged in.");
+                    }
                     return resp;
+                }
+                else {
+                    logger.error("Login response corrupted.");
                 }
             } catch (ClassNotFoundException x) {
                 logger.info("Class not found.");
@@ -236,7 +244,23 @@ public class Client {
 
         @Command
         public MessageResponse logout() throws IOException {
-            return null;
+            LogoutRequest req = new LogoutRequest();
+            oos.writeObject(req);
+
+            MessageResponse resp = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof MessageResponse) {
+                    resp = (MessageResponse) o;
+                    logger.debug(resp.toString());
+                }
+                else {
+                    logger.error("Logout response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+                }
+            return resp;
         }
     
         @Command
@@ -254,12 +278,19 @@ public class Client {
 
         @Command
         public void muh() throws IOException {
-            logger.debug("muuuh");
+            //logger.debug("muuuh");
             // proxy test
-            System.out.println("echo: " + in.readLine());
-            out.println("hi");
-            System.out.println("echo: " + in.readLine());
-            out.println("bye\n");
+            String muh = new String("muuuh");
+            oos.writeObject(muh);
+            try {
+                Object o = ois.readObject();
+                if(o instanceof MessageResponse) {
+                    MessageResponse mresp = (MessageResponse) o;
+                    logger.info(mresp.getMessage());
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
         }
     }
 }
