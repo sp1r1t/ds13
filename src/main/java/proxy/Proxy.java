@@ -491,7 +491,7 @@ public class Proxy implements IProxy{
                     }
                     // TESTING REQUEST; cow says muh!!
                     else if (o instanceof String) {
-                        if(user.getSid() == null) {
+                        if(user == null || user.getSid() == null) {
                             response = new MessageResponse("Ur not logged in.");
                         } else {
                             response = new MessageResponse("Ur in.");

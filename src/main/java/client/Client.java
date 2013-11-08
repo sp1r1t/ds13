@@ -87,6 +87,7 @@ public class Client {
      */
     public static void main(String[] args) {
         Client client = new Client("client");
+        client.run();
         return;
     }
 
@@ -121,20 +122,13 @@ public class Client {
             }
             System.exit(1);
         }
-
-        run();
     }
 
     private void run() {
         // set up thread pool
         pool = Executors.newFixedThreadPool(10);
 
-        // set up shell
-        shell = new Shell(name, System.out, System.in);
-        shell.register(new ClientCli());
-        logger.info("Starting the shell.");
-        Future shellfuture = pool.submit(shell);
-
+        // connect to proxy
         proxySocket = null;
         try {
             proxySocket = new Socket(proxy, tcpPort);
@@ -148,10 +142,19 @@ public class Client {
 
         } catch(UnknownHostException x) {
             logger.info("Host not known.");
+            logger.info("Shutting down client.");
             return;
         } catch(IOException x) {
-            logger.info("Caught IOException.");
+            logger.info("Coudln't connect to proxy.");
+            logger.info("Shutting down client.");
+            return;
         } 
+
+        // set up shell
+        shell = new Shell(name, System.out, System.in);
+        shell.register(new ClientCli());
+        logger.info("Starting the shell.");
+        Future shellfuture = pool.submit(shell);
 
         // for now join shell
         try {
@@ -170,7 +173,7 @@ public class Client {
             logger.info("Caught IOException.");
         }
 
-        logger.info("Shutting down.");
+        logger.info("Shutting down client.");
     }
 
     class ClientCli implements IClientCli {
