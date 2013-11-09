@@ -2,6 +2,8 @@ package message.request;
 
 import message.Request;
 
+import java.util.UUID;
+
 /**
  * Retrieves the current amount of credits of the authenticated user.
  * <p/>
@@ -13,10 +15,21 @@ import message.Request;
  * @see message.response.CreditsResponse
  */
 public class CreditsRequest implements Request {
-	private static final long serialVersionUID = -8173360074261745303L;
+    private static final long serialVersionUID = -8173360074261745303L;
+    
+    private final UUID sid;
 
-	@Override
-	public String toString() {
-		return "!credits";
-	}
+    public CreditsRequest(UUID sid) {
+        this.sid = sid;
+    }
+
+    public UUID getSid() {
+        return sid;
+    }
+
+    
+    @Override
+    public String toString() {
+        return "!credits";
+    }
 }

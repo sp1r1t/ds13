@@ -18,7 +18,8 @@ public final class DownloadTicket implements Serializable {
 	public DownloadTicket() {
 	}
 
-	public DownloadTicket(String username, String filename, String checksum, InetAddress address, int port) {
+	public DownloadTicket(String username, String filename, String checksum, 
+                              InetAddress address, int port) {
 		this.username = username;
 		this.filename = filename;
 		this.checksum = checksum;

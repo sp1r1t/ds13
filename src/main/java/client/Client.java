@@ -222,12 +222,57 @@ public class Client {
 
         @Command
         public Response credits() throws IOException {
-            return null;
+            CreditsRequest req = new CreditsRequest(sid);
+            oos.writeObject(req);
+
+            Response response = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof CreditsResponse) {
+                    CreditsResponse cresp = (CreditsResponse) o;
+                    response = new MessageResponse("You have " + 
+                                                   cresp.getCredits() + 
+                                                   " credits left.");
+                }
+                else if(o instanceof MessageResponse) {
+                    response = (MessageResponse) o;
+                    //logger.debug(response.toString());
+                }
+                else {
+                    logger.error("Credits response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+            return response;
         }
 
         @Command
         public Response buy(long credits) throws IOException {
-            return null;
+            BuyRequest req = new BuyRequest(sid, credits);
+            oos.writeObject(req);
+
+            Response response = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof BuyResponse) {
+                    BuyResponse bresp = (BuyResponse) o;
+                    response = new MessageResponse("You now have " + 
+                                                   bresp.getCredits() + 
+                                                   " credits.");
+                }
+                else if(o instanceof MessageResponse) {
+                    response = (MessageResponse) o;
+                    //logger.debug(response.toString());
+                }
+                else {
+                    logger.error("Credits response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+            return response;
+
         }
 
         @Command
@@ -247,7 +292,7 @@ public class Client {
 
         @Command
         public MessageResponse logout() throws IOException {
-            LogoutRequest req = new LogoutRequest();
+            LogoutRequest req = new LogoutRequest(sid);
             oos.writeObject(req);
 
             MessageResponse resp = null;

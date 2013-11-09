@@ -2,6 +2,8 @@ package message.request;
 
 import message.Request;
 
+import java.util.UUID;
+
 /**
  * Performs a logout if necessary and closes open connections between client and proxy.
  * <p/>
@@ -13,10 +15,20 @@ import message.Request;
  * @see message.response.MessageResponse
  */
 public class LogoutRequest implements Request {
-	private static final long serialVersionUID = -1496068214330800650L;
+    private static final long serialVersionUID = -1496068214330800650L;
+    
+    private final UUID sid;
 
-	@Override
-	public String toString() {
-		return "!logout";
-	}
+    public LogoutRequest(UUID sid) {
+        this.sid = sid;
+    }
+
+    public UUID getSid() {
+        return sid;
+    }
+    
+    @Override
+    public String toString() {
+        return "!logout";
+    }
 }

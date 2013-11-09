@@ -2,6 +2,8 @@ package message.request;
 
 import message.Request;
 
+import java.util.UUID;
+
 /**
  * Buys additional credits for the authenticated user.
  * <p/>
@@ -17,18 +19,18 @@ public class BuyRequest implements Request {
 
     private final long credits;
 
-    private final long sid;
+    private final UUID sid;
 
-    public BuyRequest(long credits, long sid) {
-        this.credits = credits;
+    public BuyRequest(UUID sid, long credits) {
         this.sid = sid;
+        this.credits = credits;
     }
 
     public long getCredits() {
         return credits;
     }
 
-    public long getSid() {
+    public UUID getSid() {
         return sid;
     }
 

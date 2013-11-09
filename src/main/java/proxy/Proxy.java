@@ -52,7 +52,7 @@ import org.apache.log4j.BasicConfigurator;
 /**
  * The Proxy
  */
-public class Proxy implements IProxy{
+public class Proxy {
     /**
      * member variables
      */
@@ -156,71 +156,6 @@ public class Proxy implements IProxy{
             
     }
 
-    @Override
-    public LoginResponse login(LoginRequest request) throws IOException {
-
-        logger.debug("Got login request: " + request.getUsername()
-                     + ":" + request.getPassword());
-
-        LoginResponse resp = null;
-        for(User u : users) {
-            // search matching user
-            if(u.getName().equals(request.getUsername()) &&
-               u.getPassword().equals(request.getPassword())) {
-                if(u.login()) {
-                    // successfull
-                    // create new session id
-                    UUID sid = UUID.randomUUID();
-                    u.setSid(sid);
-                    resp = new LoginResponse(
-                        LoginResponse.Type.SUCCESS, sid); 
-                } else {
-                    // already logged in
-                    resp = new LoginResponse(
-                        LoginResponse.Type.IS_LOGGED_IN);
-                }
-            }
-        }
-        if(resp == null) {
-            // no user found or wrong creds
-            resp = new LoginResponse(
-                LoginResponse.Type.WRONG_CREDENTIALS);
-        }
-
-        return resp;
-    }
-
-    @Override
-    public Response credits() throws IOException {
-        return new CreditsResponse(0);
-    }
-
-    @Override
-    public Response buy(BuyRequest credits) throws IOException {
-        return new BuyResponse(0);
-    }
-
-    @Override
-    public Response list() throws IOException {
-        return new ListResponse(null);
-    }
-
-    @Override
-    public Response download(DownloadTicketRequest request) throws IOException {
-        return new DownloadTicketResponse(null);
-    }
-
-    @Override
-    public MessageResponse upload(UploadRequest request) throws IOException {
-        return new MessageResponse("");
-    }
-
-    @Override
-    public MessageResponse logout() throws IOException {
-        // this is handled in the client connection class
-        // i can't do an argumentless logout with more than one user.
-        return new MessageResponse("");
-    }
 
     /**
      * Entry function for running the services
@@ -427,7 +362,7 @@ public class Proxy implements IProxy{
     }
 
 
-    private class ClientConnection implements Runnable {
+    private class ClientConnection implements Runnable, IProxy {
         /** 
          * member variables
          */
@@ -456,7 +391,6 @@ public class Proxy implements IProxy{
                     new ObjectOutputStream(clientSocket.getOutputStream());
 
                 
-                Request request = null;
                 Response response = null;
 
                 // listen for requests
@@ -466,28 +400,35 @@ public class Proxy implements IProxy{
                     
                     // LOGIN
                     if(o instanceof LoginRequest) {
-                        if(user != null) {
-                            response = new LoginResponse
-                                (LoginResponse.Type.IS_LOGGED_IN);
-                        } else {
-                            LoginRequest lreq = (LoginRequest) o;
-                            LoginResponse lresp = login(lreq);
-                            if(lresp.getType() == LoginResponse.Type.SUCCESS) {
-                                UUID sid = lresp.getSid();
-                                user = getUserBySid(sid);
-                            }
-                            response = lresp;
+                        LoginRequest request = (LoginRequest) o;
+                        response = login(request);
+                    }
+                    // CREDITS
+                    else if (o instanceof CreditsRequest) {
+                        CreditsRequest request = (CreditsRequest) o;
+                        // verify request
+                        response = verify(request.getSid());
+                        if(response == null) {
+                            response = credits();                        
+                        } 
+                    }
+                    // BUY
+                    else if (o instanceof BuyRequest) {
+                        BuyRequest request = (BuyRequest) o;
+                        // verify request
+                        response = verify(request.getSid());
+                        if(response == null) {
+                            response = buy(request);
                         }
                     }
                     // LOGOUT
                     else if (o instanceof LogoutRequest) {
-                        if(user != null) {
-                            logger.debug("Logging out user " + user.getName() +
-                                         ".");
-                            user.logout();
-                            user = null;
-                        }
-                        response = new MessageResponse("Logged out.");
+                        LogoutRequest request = (LogoutRequest) o;
+                        // verify request
+                        response = verify(request.getSid());
+                        if(response == null) {
+                            response = logout();
+                        } 
                     }
                     // TESTING REQUEST; cow says muh!!
                     else if (o instanceof String) {
@@ -516,6 +457,13 @@ public class Proxy implements IProxy{
             } catch (IOException x) {
                 logger.info("Caught IOException.");
             }
+
+            // clean seassion
+            try {
+                logout();
+            } catch (IOException x) {
+                logger.info("Caught IOException.");
+            }
         }
 
         private User getUserBySid(UUID sid) {
@@ -526,6 +474,105 @@ public class Proxy implements IProxy{
             }
             return null;
         }
+
+        private MessageResponse verify(UUID sid) {
+            if(user == null) {
+                return new MessageResponse("You are not logged in.");
+            } else if (!user.getSid().equals(sid)) {
+                return new MessageResponse("Did you tamper with the IDs? " +
+                                           "Go play somewhere else.");
+            } else {
+                return null;
+            }
+        }
+
+        private boolean checkSid(UUID sid) {
+            if(user != null && user.getSid().equals(sid)) {
+                return true;
+            } else {
+                return false;
+            }
+        }                
+
+        @Override
+        public LoginResponse login(LoginRequest request) throws IOException {
+            LoginResponse response = null;
+
+            // client is logged in with a user
+            if(user != null) {
+                response = new LoginResponse
+                    (LoginResponse.Type.IS_LOGGED_IN);
+            } 
+            // try to log in
+            else {
+                logger.debug("Got login request: " + request.getUsername()
+                             + ":" + request.getPassword());
+                for(User u : users) {
+                    // search matching user
+                    if(u.getName().equals(request.getUsername()) &&
+                       u.getPassword().equals(request.getPassword())) {
+                        if(u.login()) {
+                            // successfull
+                            // create new session id
+                            UUID sid = UUID.randomUUID();
+                            u.setSid(sid);
+
+                            // set user for this connection
+                            user = u;
+
+                            // craft response
+                            response = new LoginResponse(
+                                LoginResponse.Type.SUCCESS, sid); 
+                        } 
+                    }
+                }
+                if(response == null) {
+                    // no user found or wrong creds
+                    response = new LoginResponse(
+                        LoginResponse.Type.WRONG_CREDENTIALS);
+                }
+            }
+            return response;
+        }
+
+        @Override
+        public Response credits() throws IOException {
+            return new CreditsResponse(user.getCredits());
+        }
+
+        @Override
+        public Response buy(BuyRequest request) throws IOException {
+            long newCredits = user.getCredits() + request.getCredits();
+            user.setCredits(newCredits);
+            return new BuyResponse(newCredits);
+        }
+
+        @Override
+        public Response list() throws IOException {
+            return new ListResponse(null);
+        }
+
+        @Override
+        public Response download(DownloadTicketRequest request) throws IOException {
+            return new DownloadTicketResponse(null);
+        }
+
+        @Override
+        public MessageResponse upload(UploadRequest request) throws IOException {
+            return new MessageResponse("");
+        }
+
+        @Override
+        public MessageResponse logout() throws IOException {
+            if(user != null) {
+                logger.debug("Logging out user " + user.getName() +
+                             ".");
+                user.logout();
+                user = null;
+            }
+            return new MessageResponse("Logged out.");
+        }
+
     }
 
     class ProxyCli implements IProxyCli {
