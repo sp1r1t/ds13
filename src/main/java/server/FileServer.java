@@ -194,10 +194,10 @@ public class FileServer implements IFileServer{
         // create executor service
         pool = Executors.newFixedThreadPool(10);
 
-        // start thread to send keep alive msgs
-        logger.info("Starting KeepAlive");
-        KeepAlive keepAlive = new KeepAlive(udpPort, proxy, alivePeriod, tcpPort);
-        pool.submit(keepAlive);
+        // start ProxyConnectionListener
+        logger.info("Starting ProxyConnectionListener");
+        ProxyConnectionListener PCL = new ProxyConnectionListener();
+        pool.submit(PCL);
 
         // start shell
         logger.info("Starting the shell.");
@@ -206,13 +206,13 @@ public class FileServer implements IFileServer{
         Future shellfuture = pool.submit(shell);
 
 
-        // start ProxyConnectionListener
-        logger.info("Starting ProxyConnectionListener");
-        ProxyConnectionListener PCL = new ProxyConnectionListener();
-        pool.submit(PCL);
+        // start thread to send keep alive msgs
+        logger.info("Starting KeepAlive");
+        KeepAlive keepAlive = new KeepAlive(udpPort, proxy, alivePeriod, tcpPort);
+        pool.submit(keepAlive);
 
 
-        // for now just join the shell. the main thread is kept alive to 
+         // for now just join the shell. the main thread is kept alive to 
         // possibly implement respawning of unintenionally cancelled threads 
         // in the future.
         // e.g. if the keepAlive thread fails due to network problems this can

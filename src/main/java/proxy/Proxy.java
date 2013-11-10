@@ -74,6 +74,9 @@ public class Proxy {
     // a list of all fileservers
     private ArrayList<FileServer> fileservers;
 
+    // cached list of files on the the fileservers
+    private Set<String> fileCache;
+
     // the proxy shell
     private Shell shell;
 
@@ -144,6 +147,7 @@ public class Proxy {
         // create lists
         users = new ArrayList<User>();
         fileservers = new ArrayList<FileServer>();
+        fileCache = new HashSet<String>();
 
         logger.info(name + " configured, starting services.");
         
@@ -334,6 +338,7 @@ public class Proxy {
                          tcpPort + ".");
             FileServer fs = new FileServer(host, port, tcpPort);
             fileservers.add(fs);
+            pool.submit(new UpdateFileCache(fs));
             return;
         }
     }
@@ -451,7 +456,7 @@ public class Proxy {
                     else if (o instanceof ListRequest) {
                         ListRequest request = (ListRequest) o;
                         // verify reqeust
-                        response = null; //verify(request.getSid()); //TODO
+                        response = verify(request.getSid()); 
                         if(response == null) {
                             response = list();
                         }
@@ -584,41 +589,7 @@ public class Proxy {
 
         @Override
         public Response list() throws IOException {
-            Response failed = new MessageResponse("Couldn't get list.");
-
-            // get list from fileserver
-            FileServer fs;
-            if(!fileservers.isEmpty()) {
-                fs = fileservers.get(0);
-                logger.debug("Using fileserver " + fs.getHost() + ":" + 
-                             fs.getTcpPort() + ".");
-            } else {
-                logger.error("Got no fileservers.");
-                return new MessageResponse("Got no fileservers");
-            }
-            ListRequest request = new ListRequest(null);
-
-            FileServerConnection fscon = new FileServerConnection
-                (fs.getHost(), fs.getTcpPort(), request);
-            Future fsconFuture = pool.submit(fscon);
-            
-            try {
-                Object o = fsconFuture.get();
-                Response response;
-                if(o instanceof ListResponse) {
-                    logger.debug("Got list response.");
-                    return (ListResponse) o;
-                } else {
-                    logger.debug("Response corrupted.");
-                    return failed;
-                }
-            } catch (InterruptedException x) {
-                logger.debug("Got interrupted.");
-            } catch (ExecutionException x) {
-                logger.debug("Got execution exception.");
-            }
-
-            return failed;
+            return new ListResponse(fileCache);
         }
 
         @Override
@@ -641,7 +612,7 @@ public class Proxy {
             }
             return new MessageResponse("Logged out.");
         }
-
+        
     }
 
     class FileServerConnection implements Callable {
@@ -691,6 +662,33 @@ public class Proxy {
 
             logger.debug("Returning.");
             return response;
+        }
+    }
+
+    class UpdateFileCache implements Runnable {
+        Logger logger;
+        FileServer fs;
+
+        public UpdateFileCache(FileServer fs) {
+            logger = Logger.getLogger(UpdateFileCache.class);
+            this.fs = fs;
+        }
+
+        public void run() {
+            logger.debug("Updating file cache. New file server is " + 
+                         fs.getHost() + ":" + fs.getTcpPort() + ".");
+            Request request = new ListRequest(null);
+            FileServerConnection fscon = new FileServerConnection
+                (fs.getHost(), fs.getTcpPort(), request);
+            
+            Object o = fscon.call();
+            if(o instanceof ListResponse) {
+                ListResponse response = (ListResponse) o;
+                fileCache.addAll(response.getFileNames());
+                logger.debug("File cache updated.");
+            } else {
+                logger.debug("Coudln't get filelist.");
+            }
         }
     }
 
