@@ -373,6 +373,42 @@ public class Client {
 
         @Command
         public MessageResponse upload(String filename) throws IOException {
+            File file = new File(downloadDir, filename);
+            String filestring = "";
+            BufferedReader br;
+            Response response;
+            try {
+                br = new BufferedReader(new FileReader(file));
+                
+                
+                while(br.ready()) {
+                    filestring = filestring + br.readLine();
+                }
+                byte[] content = filestring.getBytes();
+                br.close();
+                
+                Request request = new UploadRequest(sid, filename, 1, content);
+                oos.writeObject(request);
+
+                try {
+                    Object o = ois.readObject();
+                    if(o instanceof MessageResponse) {
+                        response = (MessageResponse) o;
+                    } else {
+                        response = new MessageResponse("Upload failes.");
+                    }
+                } catch (ClassNotFoundException x) {
+                    logger.info("Class not found.");
+                    x.printStackTrace();
+                }
+                
+            } catch (FileNotFoundException x) {
+                response = new MessageResponse("File does not exist.");
+            } catch (IOException x) {
+                logger.debug("Couldn't read file.");
+                    x.printStackTrace();
+            }
+            
             return null;
         }
 

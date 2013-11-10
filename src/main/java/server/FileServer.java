@@ -539,6 +539,7 @@ public class FileServer implements IFileServer{
                             byte[] content = filestring.getBytes();
                             response = new DownloadFileResponse(ticket,
                                                                 content);
+                            br.close();
                         } catch (FileNotFoundException x) {
                             response = new MessageResponse("File does not " +
                                                            "exist.");
@@ -548,6 +549,29 @@ public class FileServer implements IFileServer{
                     else {
                         response = new MessageResponse("Checksum corrupted.");
                     }                    
+                }
+                else if(o instanceof UploadRequest) {
+                    logger.debug("Got upload request.");
+                    UploadRequest request = (UploadRequest) o;
+                    String filename = request.getFilename();
+
+                    // save file
+                    file.createNewFile();
+                    byte[] content = request.getContent();
+                    File file = new File(dirString, filename);
+                    try {
+                        if(file.exists()) {
+                            file.delete();
+                        }
+                        file.createNewFile();
+                        FileWriter fw = new FileWriter(file);
+                        BufferedWriter bw = new BufferedWriter(fw);
+                        fw.write(new String(content), 0, content.length);
+                        bw.close();
+                    } catch (IOException x) {
+                        logger.debug("Couldn't write file.");
+                        x.printStackTrace();
+                    }
                 }
                 else {
                     logger.debug("Got bad request.");

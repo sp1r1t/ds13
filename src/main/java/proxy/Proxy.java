@@ -493,9 +493,18 @@ public class Proxy {
                         DownloadTicketRequest request = 
                             (DownloadTicketRequest) o;
                         // verify reqeust
-                        response = null; //verify(request.getSid()); 
+                        response = verify(request.getSid()); 
                         if(response == null) {
                             response = download(request);
+                        }
+                    }
+                    // UPLOAD
+                    else if (o instanceof UploadRequest) {
+                        UploadRequest reqeust = (UploadRequest) o;
+                        // verify reqeust
+                        response = verify(request.getSid()); 
+                        if(response == null) {
+                            response = upload(request);
                         }
                     }
                     // LOGOUT
@@ -712,7 +721,17 @@ public class Proxy {
 
         @Override
         public MessageResponse upload(UploadRequest request) throws IOException {
-            return new MessageResponse("");
+            FileServerConnection fscon;
+            for(FileServer f : fileservers) {
+                fscon = new FileServerConnection(f.getHost(), f.getTcpPort(),
+                                                 request);
+                Response response = fscon.call();
+            }
+
+            // increase user credits
+            user.setCredits(user.getCredits() + 2 * request.getContent().length);
+            
+            return new MessageResponse("Uploaded.");
         }
 
         @Override
