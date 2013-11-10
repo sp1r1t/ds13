@@ -8,6 +8,7 @@ import message.response.*;
 import model.DownloadTicket;
 
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.HashSet;
@@ -73,6 +74,9 @@ public class Proxy {
 
     // a list of all fileservers
     private ArrayList<FileServer> fileservers;
+
+    // file server usage
+    private Map<FileServer, long> fsUsage;
 
     // cached list of files on the the fileservers
     private Set<String> fileCache;
@@ -147,7 +151,9 @@ public class Proxy {
         // create lists
         users = new ArrayList<User>();
         fileservers = new ArrayList<FileServer>();
+        fsUsage = new HashMap<FileServer, long>();
         fileCache = new HashSet<String>();
+
 
         logger.info(name + " configured, starting services.");
         
@@ -338,6 +344,7 @@ public class Proxy {
                          tcpPort + ".");
             FileServer fs = new FileServer(host, port, tcpPort);
             fileservers.add(fs);
+            fsUsage.add(fs,0);
             pool.submit(new UpdateFileCache(fs));
             return;
         }
@@ -459,6 +466,16 @@ public class Proxy {
                         response = verify(request.getSid()); 
                         if(response == null) {
                             response = list();
+                        }
+                    }
+                    // DOWNLOAD
+                    else if (o instanceof DownloadTicketRequest) {
+                        DownloadTicketRequest request = 
+                            (DownloadTicketRequest) o;
+                        // verify reqeust
+                        response = verify(request.getSid()); 
+                        if(response == null) {
+                            response = download();
                         }
                     }
                     // LOGOUT
@@ -594,6 +611,7 @@ public class Proxy {
 
         @Override
         public Response download(DownloadTicketRequest request) throws IOException {
+            
             return new DownloadTicketResponse(null);
         }
 
