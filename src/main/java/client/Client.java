@@ -301,7 +301,27 @@ public class Client {
  
         @Command
         public Response download(String filename) throws IOException {
-            return null;
+            DownloadTicketRequest req = 
+                new DownloadTicketRequest(sid, filename);
+            oos.writeObject(req);
+
+            Response resp = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof DownloadTicketResponse) {
+                    resp = (DownloadTicketResponse) o;
+                    //logger.debug(resp.toString());
+                }
+                else if(o instanceof MessageResponse) {
+                    resp = (MessageResponse) o;
+                }
+                else {
+                    logger.error("List response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+                }
+            return resp;
         }
 
         @Command

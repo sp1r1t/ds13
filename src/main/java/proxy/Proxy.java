@@ -46,6 +46,7 @@ import cli.Command;
 import cli.Shell;
 
 import util.Config;
+import util.ChecksumUtils;
 
 import proxy.User;
 import proxy.FileServer;
@@ -76,7 +77,7 @@ public class Proxy {
     private ArrayList<FileServer> fileservers;
 
     // file server usage
-    private Map<FileServer, long> fsUsage;
+    private Map<FileServer, Integer> fsUsage;
 
     // cached list of files on the the fileservers
     private Set<String> fileCache;
@@ -151,7 +152,7 @@ public class Proxy {
         // create lists
         users = new ArrayList<User>();
         fileservers = new ArrayList<FileServer>();
-        fsUsage = new HashMap<FileServer, long>();
+        fsUsage = new HashMap<FileServer, Integer>();
         fileCache = new HashSet<String>();
 
 
@@ -274,6 +275,25 @@ public class Proxy {
         return 0;
     }
 
+    private FileServer getCurrentFileserver() {
+        if(fsUsage.size() < 1) {
+            return null;
+        }
+        Set<FileServer> keyset = fsUsage.keySet();
+        FileServer fileserver = (FileServer) keyset.toArray()[0];
+        Integer usage = fsUsage.get(fileserver);
+
+        for(FileServer f : keyset) {
+            Integer u = fsUsage.get(f);
+            if(u < usage) {
+                fileserver = f;
+                usage = u;
+            }
+        }
+        return fileserver;
+    }
+            
+
     private class KeepAliveListener implements Runnable {
         /** 
          * Member variables
@@ -344,7 +364,7 @@ public class Proxy {
                          tcpPort + ".");
             FileServer fs = new FileServer(host, port, tcpPort);
             fileservers.add(fs);
-            fsUsage.add(fs,0);
+            fsUsage.put(fs,0);
             pool.submit(new UpdateFileCache(fs));
             return;
         }
@@ -473,9 +493,9 @@ public class Proxy {
                         DownloadTicketRequest request = 
                             (DownloadTicketRequest) o;
                         // verify reqeust
-                        response = verify(request.getSid()); 
+                        response = null; //verify(request.getSid()); 
                         if(response == null) {
-                            response = download();
+                            response = download(request);
                         }
                     }
                     // LOGOUT
@@ -611,8 +631,70 @@ public class Proxy {
 
         @Override
         public Response download(DownloadTicketRequest request) throws IOException {
-            
-            return new DownloadTicketResponse(null);
+            Response clientresponse = null;
+
+            // get file size
+            Request inforequest = new InfoRequest(request.getFilename());
+            FileServer fs = getCurrentFileserver();
+            if(fs == null) {
+                return new MessageResponse("No file server available.");
+            }
+
+            FileServerConnection fscon = new 
+                FileServerConnection(fs.getHost(), fs.getTcpPort(), inforequest);
+            Object o = fscon.call();
+            if(o instanceof InfoResponse) {
+                InfoResponse response = (InfoResponse) o;
+                long filesize = response.getSize();
+                String filename = response.getFilename();
+                logger.debug("File " + filename + " has size " + filesize);
+            } 
+            else if (o instanceof MessageResponse) {
+                return (Response) o;
+            } else {
+                logger.error("Response corrupted.");
+                return null;
+            }
+  
+            // get file version
+            Request versionrequest = new VersionRequest(request.getFilename());
+            fs = getCurrentFileserver();
+            if(fs == null) {
+                return new MessageResponse("No file server available.");
+            }
+
+            fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), 
+                                             versionrequest);
+            o = fscon.call();
+            if(o instanceof VersionResponse) {
+                VersionResponse response = (VersionResponse) o;
+                int version = response.getVersion();
+                String filename = response.getFilename();
+                logger.debug("File " + filename + " is version " + version);
+            } 
+            else if (o instanceof MessageResponse) {
+                return (MessageResponse) o;
+            } else {
+                logger.error("Response corrupted.");
+                return null;
+            }
+
+/*
+                // check if user has enough credits
+                if(user.getCredits() > filesize) {
+                    // craft download ticket
+                    String checksum = 
+                        ChecksumUtils.generateChecksum(user.getName(), filename,
+                                                       
+                    DownloadTicket = 
+                        new DownloadTicket(user.getName(), filename, 
+                                                        
+
+                } else {
+                    response = new MessageResponse("Not enough credits.");
+                }
+*/
+            return clientresponse;
         }
 
         @Override

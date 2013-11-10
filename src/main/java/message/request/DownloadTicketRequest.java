@@ -2,6 +2,8 @@ package message.request;
 
 import message.Request;
 
+import java.util.UUID;
+
 /**
  * Requests a {@link model.DownloadTicket} in order to download a file from a file server.
  * <p/>
@@ -13,20 +15,26 @@ import message.Request;
  * @see message.response.DownloadTicketResponse
  */
 public class DownloadTicketRequest implements Request {
-	private static final long serialVersionUID = 1183675324570817315L;
+    private static final long serialVersionUID = 1183675324570817315L;
 
-	private final String filename;
+    private final String filename;
 
-	public DownloadTicketRequest(String filename) {
-		this.filename = filename;
-	}
+    private final UUID sid;
 
-	public String getFilename() {
-		return filename;
-	}
+    public DownloadTicketRequest(UUID sid, String filename) {
+        this.sid = sid;
+        this.filename = filename;
+    }
 
-	@Override
-	public String toString() {
-		return "!download " + getFilename();
-	}
+    public UUID getSid() {
+        return sid;
+    }
+    public String getFilename() {
+        return filename;
+    }
+
+    @Override
+    public String toString() {
+        return "!download " + getFilename();
+    }
 }

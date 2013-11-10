@@ -461,13 +461,53 @@ public class FileServer implements IFileServer{
                 // recieve request
                 Object o = ois.readObject();
                 if(o instanceof ListRequest) {
-                    logger.debug("Got list reqeuest.");
+                    logger.debug("Got list requeest.");
+
+                    // create file set
                     Set<String> fileset = new HashSet<String>();
                     for(String s : dir.list()) {
                         fileset.add(s);
                     }
                     response = new ListResponse(fileset);
-                } else {
+                } 
+                else if(o instanceof InfoRequest) {
+                    logger.debug("Got info request.");
+                    InfoRequest request = (InfoRequest) o;
+                    String filename = request.getFilename();
+
+                    // create file set
+                    Set<String> fileset = new HashSet<String>();
+                    for(String s : dir.list()) {
+                        fileset.add(s);
+                    }
+                    if(fileset.contains(filename)) {
+                        File file = new File(dirString,filename);
+                        long size = file.length();
+                        response = new InfoResponse(filename, size);
+                    } else {
+                        logger.debug("File not found.");
+                        response = new MessageResponse("File not found.");
+                    }
+                }
+                else if(o instanceof VersionRequest) {
+                    logger.debug("Got version request.");
+                    VersionRequest request = (VersionRequest) o;
+                    String filename = request.getFilename();
+
+                    // create file set
+                    Set<String> fileset = new HashSet<String>();
+                    for(String s : dir.list()) {
+                        fileset.add(s);
+                    }
+                    if(fileset.contains(filename)) {
+                        File file = new File(dirString,filename);
+                        response = new VersionResponse(filename, 1);
+                    } else {
+                        logger.debug("File not found.");
+                        response = new MessageResponse("File not found.");
+                    }
+                }
+                else {
                     logger.debug("Got bad request.");
                 }
 
