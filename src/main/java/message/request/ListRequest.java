@@ -2,6 +2,8 @@ package message.request;
 
 import message.Request;
 
+import java.util.UUID;
+
 /**
  * Lists all files available on all file servers.
  * <p/>
@@ -17,10 +19,20 @@ import message.Request;
  * @see message.response.ListResponse
  */
 public class ListRequest implements Request {
-	private static final long serialVersionUID = -3772629665574053670L;
+    private static final long serialVersionUID = -3772629665574053670L;
 
-	@Override
-	public String toString() {
-		return "!list";
-	}
+    private final UUID sid;
+
+    public ListRequest(UUID sid) {
+        this.sid = sid;
+    }
+
+    public UUID getSid() {
+        return sid;
+    }
+
+    @Override
+    public String toString() {
+        return "!list";
+    }
 }

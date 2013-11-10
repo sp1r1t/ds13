@@ -5,6 +5,7 @@ import message.request.DownloadFileRequest;
 import message.request.InfoRequest;
 import message.request.UploadRequest;
 import message.request.VersionRequest;
+import message.request.ListRequest;
 import message.response.*;
 
 import model.DownloadTicket;
@@ -12,6 +13,7 @@ import model.DownloadTicket;
 import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.Set;
+import java.util.HashSet;
 import java.util.Scanner;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
@@ -29,6 +31,9 @@ import java.io.IOException;
 import java.io.BufferedReader;
 import java.io.PrintWriter;
 import java.io.InputStreamReader;
+import java.io.File;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -71,8 +76,11 @@ public class FileServer implements IFileServer{
     // time interval to send alive packets
     private int alivePeriod;
 
+    // file directory identifier
+    private String dirString;
+
     // file directory
-    private String dir;
+    private File dir;
 
     // TCP port to listen for clients
     private int tcpPort;
@@ -87,8 +95,8 @@ public class FileServer implements IFileServer{
      * main function
      */
     public static void main(String[] args) {
-        String name = new String("fs1");
-        FileServer fs1 = new FileServer(name);
+        String name = new String(args[0]);
+        FileServer fs = new FileServer(name);
         return;
     }
 
@@ -109,7 +117,7 @@ public class FileServer implements IFileServer{
             key = "fileserver.alive";
             alivePeriod = config.getInt(key);
             key = "fileserver.dir";
-            dir = config.getString(key);
+            dirString = config.getString(key);
             key = "tcp.port";
             tcpPort = config.getInt(key);
             key = "proxy.host";
@@ -125,15 +133,21 @@ public class FileServer implements IFileServer{
             }
             System.exit(1);
         }
+        
+        // set up file directory
+        dir = new File(dirString);
+        if(!dir.exists()) {
+            logger.warn("Specified directory does not exist. Creating it.");
+            dir.mkdirs();
+        }
+        logger.debug("File list: ");
+        for(String s : dir.list()) {
+            logger.debug(s);
+        }
 
         
-        
-/*        if(readConfigFile() != 0) {
-            System.err.println("FATAL: stopping server");
-            }*/
-        logger.info(name + " configured, starting services.");
-        
         try {
+            logger.info(name + " configured, starting services.");
             run();
         }
         catch (IOException x) {
@@ -263,7 +277,7 @@ public class FileServer implements IFileServer{
         // save properties
         try{
             alivePeriod = Integer.parseInt(properties.get("fileserver.alive"));
-            dir = properties.get("fileserver.dir");
+            dirString = properties.get("fileserver.dir");
             tcpPort = Integer.parseInt(properties.get("tcp.port"));
             proxy = properties.get("proxy.host");
             udpPort = Integer.parseInt(properties.get("proxy.udp.port"));
@@ -278,13 +292,13 @@ public class FileServer implements IFileServer{
     }
 
     private boolean testFileExists(String filename) {
-        Path path = Paths.get(dir,filename);
+        Path path = Paths.get(dirString,filename);
         return Files.exists(path);
     }
 
     private boolean testEnoughCredits(String filename, int credits) {
         try {
-            Path path = Paths.get(dir,filename);
+            Path path = Paths.get(dirString,filename);
             return (credits >= Files.size(path));
         }
         catch (IOException x){
@@ -293,18 +307,6 @@ public class FileServer implements IFileServer{
         }
     }
 
-    /**
-     * clean exit
-     */
-    public void cleanExit() throws IOException {
-        // close sockets
-/*        if(serverSocket != null)
-            serverSocket.close();
-        if(clientSocket != null)
-        clientSocket.close();*/
-    }
-
-    
     private class KeepAlive implements Runnable {
         /**
          * member variables
@@ -388,7 +390,7 @@ public class FileServer implements IFileServer{
          */
         public void run() {
             // start listening for connections
-            logger.info("Creating server socket.");
+            logger.info("Creating server socket on port " + tcpPort + ".");
             try {
                 serverSocket = new ServerSocket(tcpPort);
             } 
@@ -400,11 +402,12 @@ public class FileServer implements IFileServer{
             // accept connection
             try {
                 for(int i = 1;; i = i+1) {
-                    logger.debug("Waiting for " + i + ". client.");
+                    logger.debug("Waiting for " + i + ". client on " + tcpPort +
+                                 ".");
                 
                     Socket clientSocket = serverSocket.accept();
-                    Thread con = new Thread(new ProxyConnection(clientSocket));
-                    con.setName("ProxyConnection" + i);
+                    logger.debug("Accepted Connection.");
+                    ProxyConnection con = new ProxyConnection(clientSocket);
                     pool.submit(con);
                 }
             } catch (IOException x) {
@@ -445,28 +448,37 @@ public class FileServer implements IFileServer{
          */
         public void run() {
             logger.info("Starting Connection.");
-            try (
-                PrintWriter out = new PrintWriter
-                    (clientSocket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader
-                    (new InputStreamReader(clientSocket.getInputStream()))
-                )
-            {
-                String inputLine, outputLine;
+            try {
+                // create streams
+                ObjectInputStream ois = 
+                    new ObjectInputStream(clientSocket.getInputStream());
+                ObjectOutputStream oos = 
+                    new ObjectOutputStream(clientSocket.getOutputStream());
+
                 
-                // initiate conversation with client
-                outputLine = "sup?";
-                out.println(outputLine);
-                
-                while ((inputLine = in.readLine()) != null) {   
-                    outputLine = "cool";
-                    out.println(outputLine);
-                    if (inputLine.equals("bye"))
-                        break;
+                Response response = null;
+
+                // recieve request
+                Object o = ois.readObject();
+                if(o instanceof ListRequest) {
+                    logger.debug("Got list reqeuest.");
+                    Set<String> fileset = new HashSet<String>();
+                    for(String s : dir.list()) {
+                        fileset.add(s);
+                    }
+                    response = new ListResponse(fileset);
+                } else {
+                    logger.debug("Got bad request.");
                 }
+
+                // send response back
+                oos.writeObject(response);
+                
             } catch (IOException x) {
-                logger.info("Caught IOException");
-            } finally {
+                logger.info("Caught IOException.");
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }finally {
                 try {
                     clientSocket.close();
                 } catch (IOException x) {

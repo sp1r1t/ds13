@@ -9,6 +9,7 @@ import model.DownloadTicket;
 
 import java.util.LinkedHashSet;
 import java.util.HashMap;
+import java.util.Set;
 import java.util.HashSet;
 import java.util.Scanner;
 import java.util.regex.Pattern;
@@ -21,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Callable;
 import java.util.UUID;
 
 import java.io.IOException;
@@ -45,6 +47,7 @@ import cli.Shell;
 import util.Config;
 
 import proxy.User;
+import proxy.FileServer;
 
 import org.apache.log4j.Logger;
 import org.apache.log4j.BasicConfigurator;
@@ -68,11 +71,8 @@ public class Proxy {
     // a list of all users
     private ArrayList<User> users;
 
-    // list of logged in users
-    private ArrayList<User> loggedIn;
-
     // a list of all fileservers
-    private ArrayList<Integer> fileservers;
+    private ArrayList<FileServer> fileservers;
 
     // the proxy shell
     private Shell shell;
@@ -143,7 +143,7 @@ public class Proxy {
 
         // create lists
         users = new ArrayList<User>();
-        loggedIn = new ArrayList<User>();
+        fileservers = new ArrayList<FileServer>();
 
         logger.info(name + " configured, starting services.");
         
@@ -292,23 +292,49 @@ public class Proxy {
                 logger.info("Starting to listen for packets.");
                 try{
                     while(true) {
-                        aliveSocket.receive(packet);
-                        String data = new String(packet.getData());
-                        logger.info("FS data: " + data);
+                        try {
+                            aliveSocket.receive(packet);
+                            String data = new String(packet.getData()).trim();
+                            Integer tcpPort = Integer.valueOf(data);
+                            Integer port = packet.getPort();
+                            String host = packet.getAddress().getHostAddress();
+                            /*logger.info("Packet from " + host + ":" + port + 
+                              " data: " + tcpPort);*/
+                            addFileServer(host, port, tcpPort);
+                        } catch (NumberFormatException x) {
+                            logger.info("Couldn't parse data.");
+                        }
                     } 
                 } catch (IOException x) {
                     logger.info("Interrupted. closing...");
-                }
+                } 
             }
             catch (IOException x) {
                 logger.info("IO Exception thrown.");
+            } catch (Exception x) {
+                x.printStackTrace();
             }
             if(aliveSocket != null)
                 aliveSocket.close();
+            logger.info("Shutting down alive listener.");
         }
         
         public DatagramSocket getAliveSocket() {
             return aliveSocket;
+        }
+
+        private void addFileServer(String host, Integer port, Integer tcpPort) {
+            for(FileServer f : fileservers) {
+                if(f.getHost().equals(host) &&
+                   f.getTcpPort().equals(tcpPort)) {
+                    return;
+                }
+            }
+            logger.debug("Adding new file server: " + host + ":" + port + ":" +
+                         tcpPort + ".");
+            FileServer fs = new FileServer(host, port, tcpPort);
+            fileservers.add(fs);
+            return;
         }
     }
 
@@ -336,10 +362,10 @@ public class Proxy {
 
             // accept connection
             try {
+                logger.debug("Listening on port " + tcpPort + ".");
                 for(int i = 1;; i = i+1) {
-                    logger.debug("Waiting for " + i + ". client.");
-                
                     Socket clientSocket = serverSocket.accept();
+                    logger.debug("Creating " + i + ". connection.");
                     ClientConnection con = new ClientConnection(clientSocket);
                     pool.submit(con);
                 }
@@ -421,6 +447,15 @@ public class Proxy {
                             response = buy(request);
                         }
                     }
+                    // LIST
+                    else if (o instanceof ListRequest) {
+                        ListRequest request = (ListRequest) o;
+                        // verify reqeust
+                        response = null; //verify(request.getSid()); //TODO
+                        if(response == null) {
+                            response = list();
+                        }
+                    }
                     // LOGOUT
                     else if (o instanceof LogoutRequest) {
                         LogoutRequest request = (LogoutRequest) o;
@@ -449,15 +484,15 @@ public class Proxy {
             } catch (Exception x) {
                 logger.info("Caught Exception: "); 
                 x.printStackTrace();
+            } finally {
+                
+                try {
+                    logger.debug("Closing socket.");
+                    clientSocket.close();
+                } catch (IOException x) {
+                    logger.info("Caught IOException.");
+                }
             }
-
-            try {
-                logger.debug("Closing socket.");
-                clientSocket.close();
-            } catch (IOException x) {
-                logger.info("Caught IOException.");
-            }
-
             // clean seassion
             try {
                 logout();
@@ -549,7 +584,45 @@ public class Proxy {
 
         @Override
         public Response list() throws IOException {
-            return new ListResponse(null);
+            logger.debug("Got list request.");
+            // get list from fileserver
+            FileServer fs;
+            if(!fileservers.isEmpty()) {
+                fs = fileservers.get(0);
+                logger.debug("Using fileserver " + fs.getHost() + ":" + 
+                             fs.getTcpPort() + ".");
+            } else {
+                logger.error("Got no fileservers.");
+                return new MessageResponse("Got no fileservers");
+            }
+            ListRequest request = new ListRequest(null);
+
+            FileServerConnection fscon = new FileServerConnection
+                (fs.getHost(), fs.getTcpPort(), request);
+            Future fsconFuture = pool.submit(fscon);
+            
+            try {
+                Object o = fsconFuture.get();
+                Response response;
+                if(o instanceof ListResponse) {
+                    logger.debug("Got list response.");
+                    return (ListResponse) o;
+                } else {
+                    logger.debug("Response corrupted.");
+                    return null;
+                }
+            } catch (InterruptedException x) {
+                logger.debug("Got interrupted.");
+            } catch (ExecutionException x) {
+                logger.debug("Got execution exception.");
+            }
+
+            Set<String> set = new HashSet<String>();
+            set.add("cowabunga");
+            set.add("illbeback");
+            set.add("put the cookie down!");
+
+            return new ListResponse(set);
         }
 
         @Override
@@ -573,6 +646,56 @@ public class Proxy {
             return new MessageResponse("Logged out.");
         }
 
+    }
+
+    class FileServerConnection implements Callable {
+        private Logger logger;
+        private String host;
+        private Integer port;
+        private Request request;
+
+        public FileServerConnection(String host, Integer port, Request request) {
+            logger = Logger.getLogger(FileServerConnection.class);
+            this.host = host;
+            this.port = port;
+            this.request = request;
+        }
+
+        public Response call() {
+            Socket socket = null;
+            ObjectOutputStream oos;
+            ObjectInputStream ois;
+            Response response = null;
+            try {
+                logger.debug("Connectiong to " + host + ":" + port+ ".");
+                socket = new Socket(host, port);
+
+                oos = new ObjectOutputStream(socket.getOutputStream());
+                ois = new ObjectInputStream(socket.getInputStream());
+                
+                logger.debug("Writing request to fs.");
+                oos.writeObject(request);
+
+                logger.debug("Reading request from fs.");
+                Object o = ois.readObject();
+                if(o instanceof Response) {
+                    logger.debug("Got Response.");
+                    response = (Response) o;
+                } else {
+                    logger.warn("Response corrupted.");
+                }
+            } catch(UnknownHostException x) {
+                logger.info("Host not known.");
+            } catch(IOException x) {
+                logger.info("Coudln't connect to file server.");
+                x.printStackTrace();
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+            }
+
+            logger.debug("Returning.");
+            return response;
+        }
     }
 
     class ProxyCli implements IProxyCli {

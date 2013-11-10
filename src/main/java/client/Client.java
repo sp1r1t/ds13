@@ -277,7 +277,26 @@ public class Client {
 
         @Command
         public Response list() throws IOException {
-            return null;
+            ListRequest req = new ListRequest(sid);
+            oos.writeObject(req);
+
+            Response resp = null;
+            try {
+                Object o = ois.readObject();
+                if(o instanceof ListResponse) {
+                    resp = (ListResponse) o;
+                    //logger.debug(resp.toString());
+                }
+                else if(o instanceof MessageResponse) {
+                    resp = (MessageResponse) o;
+                }
+                else {
+                    logger.error("List response corrupted.");
+                }
+            } catch (ClassNotFoundException x) {
+                logger.info("Class not found.");
+                }
+            return resp;
         }
  
         @Command
