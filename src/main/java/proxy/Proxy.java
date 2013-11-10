@@ -697,10 +697,10 @@ public class Proxy {
                 String checksum = 
                     ChecksumUtils.generateChecksum(user.getName(), filename,
                                                    version, filesize);
+                InetAddress host = InetAddress.getByName(fs.getHost());
                 DownloadTicket ticket = 
                     new DownloadTicket(user.getName(), filename, checksum,
-                                       clientSocket.getInetAddress(),
-                                       clientSocket.getPort());
+                                       host,fs.getTcpPort());
                 
                 // send desired response
                 return new DownloadTicketResponse(ticket);

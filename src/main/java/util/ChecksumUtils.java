@@ -21,7 +21,8 @@ public final class ChecksumUtils {
 	 * @param fileSize the size of the file
 	 * @return the checksum
 	 */
-	public static String generateChecksum(String user, String filename, int version, long fileSize) {
+	public static String generateChecksum(String user, String filename, 
+                                              int version, long fileSize) {
 		return user + SEPARATOR + filename + SEPARATOR + fileSize;
 	}
 
@@ -35,7 +36,8 @@ public final class ChecksumUtils {
 	 * @param checksum the checksum to verify
 	 * @return {@code true} if the checksum is valid, {@code false} otherwise
 	 */
-	public static boolean verifyChecksum(String user, File file, int version, String checksum) {
+	public static boolean verifyChecksum(String user, File file, 
+                                             int version, String checksum) {
 		String actual = generateChecksum(user, file.getName(), version, file.length());
 		return actual.equals(checksum);
 	}

@@ -32,8 +32,11 @@ import java.io.BufferedReader;
 import java.io.PrintWriter;
 import java.io.InputStreamReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.FileNotFoundException;
+
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -48,6 +51,7 @@ import cli.Command;
 import cli.Shell;
 
 import util.Config;
+import util.ChecksumUtils;
 
 import org.apache.log4j.Logger;
 import org.apache.log4j.BasicConfigurator;
@@ -506,6 +510,44 @@ public class FileServer implements IFileServer{
                         logger.debug("File not found.");
                         response = new MessageResponse("File not found.");
                     }
+                }
+                else if(o instanceof DownloadFileRequest) {
+                    logger.debug("Got download request.");
+                    DownloadFileRequest request = (DownloadFileRequest) o;
+                    DownloadTicket ticket = request.getTicket();
+
+                    // validate ticket
+                    String user = ticket.getUsername();
+                    String filename = ticket.getFilename();
+                    String checksum = ticket.getChecksum();
+                    InetAddress address = ticket.getAddress();
+                    int port = ticket.getPort();
+                    int version = 1;
+
+                    File file = new File(dirString, filename);
+                    if(ChecksumUtils.verifyChecksum
+                       (user, file, version, checksum)) {
+                        String filestring = "";
+                        BufferedReader br;
+                        try {
+                            br = new BufferedReader(new FileReader(file));
+                            
+                            
+                            while(br.ready()) {
+                                filestring = filestring + br.readLine();
+                            }
+                            byte[] content = filestring.getBytes();
+                            response = new DownloadFileResponse(ticket,
+                                                                content);
+                        } catch (FileNotFoundException x) {
+                            response = new MessageResponse("File does not " +
+                                                           "exist.");
+                        } 
+                    }
+                    // ticket invalid
+                    else {
+                        response = new MessageResponse("Checksum corrupted.");
+                    }                    
                 }
                 else {
                     logger.debug("Got bad request.");
