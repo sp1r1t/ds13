@@ -519,6 +519,9 @@ public class Proxy {
                     // send response back
                     if(response != null) {
                         oos.writeObject(response);
+                    } else {
+                        String msg = "Dwarfes attacked us, we were defenseless!";
+                        oos.writeObject(new MessageResponse(msg));
                     }
                 }
             } catch (IOException x) {
@@ -631,7 +634,9 @@ public class Proxy {
 
         @Override
         public Response download(DownloadTicketRequest request) throws IOException {
-            Response clientresponse = null;
+            String filename;
+            long filesize;
+            int version;
 
             // get file size
             Request inforequest = new InfoRequest(request.getFilename());
@@ -645,8 +650,8 @@ public class Proxy {
             Object o = fscon.call();
             if(o instanceof InfoResponse) {
                 InfoResponse response = (InfoResponse) o;
-                long filesize = response.getSize();
-                String filename = response.getFilename();
+                filesize = response.getSize();
+                filename = response.getFilename();
                 logger.debug("File " + filename + " has size " + filesize);
             } 
             else if (o instanceof MessageResponse) {
@@ -668,8 +673,11 @@ public class Proxy {
             o = fscon.call();
             if(o instanceof VersionResponse) {
                 VersionResponse response = (VersionResponse) o;
-                int version = response.getVersion();
-                String filename = response.getFilename();
+                version = response.getVersion();
+                if (!filename.equals(response.getFilename())) {
+                    logger.error("Version request on different filename.");
+                    return null;
+                }
                 logger.debug("File " + filename + " is version " + version);
             } 
             else if (o instanceof MessageResponse) {
@@ -679,22 +687,27 @@ public class Proxy {
                 return null;
             }
 
-/*
-                // check if user has enough credits
-                if(user.getCredits() > filesize) {
-                    // craft download ticket
-                    String checksum = 
-                        ChecksumUtils.generateChecksum(user.getName(), filename,
-                                                       
-                    DownloadTicket = 
-                        new DownloadTicket(user.getName(), filename, 
-                                                        
 
-                } else {
-                    response = new MessageResponse("Not enough credits.");
-                }
-*/
-            return clientresponse;
+            // check if user has enough credits
+            if(user != null && user.getCredits() >= filesize) {
+                // decrease user credits
+                user.setCredits(user.getCredits() - filesize);
+
+                // craft download ticket
+                String checksum = 
+                    ChecksumUtils.generateChecksum(user.getName(), filename,
+                                                   version, filesize);
+                DownloadTicket ticket = 
+                    new DownloadTicket(user.getName(), filename, checksum,
+                                       clientSocket.getInetAddress(),
+                                       clientSocket.getPort());
+                
+                // send desired response
+                return new DownloadTicketResponse(ticket);
+                
+            } else {
+                return new MessageResponse("Not enough credits.");
+            }
         }
 
         @Override
