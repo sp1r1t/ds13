@@ -584,7 +584,8 @@ public class Proxy {
 
         @Override
         public Response list() throws IOException {
-            logger.debug("Got list request.");
+            Response failed = new MessageResponse("Couldn't get list.");
+
             // get list from fileserver
             FileServer fs;
             if(!fileservers.isEmpty()) {
@@ -609,7 +610,7 @@ public class Proxy {
                     return (ListResponse) o;
                 } else {
                     logger.debug("Response corrupted.");
-                    return null;
+                    return failed;
                 }
             } catch (InterruptedException x) {
                 logger.debug("Got interrupted.");
@@ -617,12 +618,7 @@ public class Proxy {
                 logger.debug("Got execution exception.");
             }
 
-            Set<String> set = new HashSet<String>();
-            set.add("cowabunga");
-            set.add("illbeback");
-            set.add("put the cookie down!");
-
-            return new ListResponse(set);
+            return failed;
         }
 
         @Override
