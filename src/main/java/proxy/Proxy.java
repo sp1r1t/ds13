@@ -500,7 +500,7 @@ public class Proxy {
                     }
                     // UPLOAD
                     else if (o instanceof UploadRequest) {
-                        UploadRequest reqeust = (UploadRequest) o;
+                        UploadRequest request = (UploadRequest) o;
                         // verify reqeust
                         response = verify(request.getSid()); 
                         if(response == null) {
@@ -731,6 +731,8 @@ public class Proxy {
             // increase user credits
             user.setCredits(user.getCredits() + 2 * request.getContent().length);
             
+            // add file to file cache
+            fileCache.add(request.getFilename());
             return new MessageResponse("Uploaded.");
         }
 

@@ -29,7 +29,9 @@ import java.util.concurrent.ExecutionException;
 
 import java.io.IOException;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.PrintWriter;
+import java.io.FileWriter;
 import java.io.InputStreamReader;
 import java.io.File;
 import java.io.FileReader;
@@ -556,7 +558,6 @@ public class FileServer implements IFileServer{
                     String filename = request.getFilename();
 
                     // save file
-                    file.createNewFile();
                     byte[] content = request.getContent();
                     File file = new File(dirString, filename);
                     try {
