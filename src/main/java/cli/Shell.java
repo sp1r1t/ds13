@@ -5,6 +5,7 @@ import convert.ConversionService;
 import java.io.*;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
+import java.lang.reflect.TypeVariable;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
@@ -230,8 +231,12 @@ public class Shell implements Runnable, Closeable {
 		}
 
 		Object[] args = new Object[parts.length - 1];
+                Class<?>[] paramTypes = cmdDef.targetMethod.getParameterTypes();
+                if(paramTypes.length + 1 < parts.length) {
+                    throw new IllegalArgumentException("wrong number of arguments");
+                }
 		for (int i = 1; i < parts.length; i++) {
-			args[i - 1] = conversionService.convert(parts[i], cmdDef.targetMethod.getParameterTypes()[i - 1]);
+                    args[i - 1] = conversionService.convert(parts[i], paramTypes[i - 1]);
 		}
 		return invocationHandler.invoke(cmdDef.targetObject, cmdDef.targetMethod, args);
 	}
