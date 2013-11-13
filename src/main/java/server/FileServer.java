@@ -585,6 +585,8 @@ public class FileServer implements IFileServer{
                 logger.info("Caught IOException.");
             } catch (ClassNotFoundException x) {
                 logger.info("Class not found.");
+            } catch (IllegalArgumentException x) {
+                //oos.writeObject(new MessageRespones("Illegal Argument"));
             }finally {
                 try {
                     clientSocket.close();

@@ -69,7 +69,10 @@ public class Shell implements Runnable, Closeable {
 				Object result;
 				try {
 					result = invoke(line);
-				} catch (Throwable throwable) {
+				} catch (IllegalArgumentException x) {
+                                    result = x.getMessage();
+
+                                } catch (Throwable throwable) {
 					ByteArrayOutputStream str = new ByteArrayOutputStream(1024);
 					throwable.printStackTrace(new PrintStream(str, true));
 					result = str.toString();
@@ -84,7 +87,7 @@ public class Shell implements Runnable, Closeable {
 			} catch (IOException ex) {
 				System.out.println(ex.getClass().getName() + ": " + ex.getMessage());
 			}
-		}
+		}                    
 	}
 
 	/**
@@ -200,7 +203,7 @@ public class Shell implements Runnable, Closeable {
 				String name = command.value().isEmpty() ? method.getName() : command.value();
 				name = name.startsWith("!") ? name : "!" + name;
 				if (commandMap.containsKey(name)) {
-					throw new IllegalArgumentException(String.format("Command '%s' is already registered.", name));
+					throw new IllegalArgumentException(String.format("command '%s' is already registered.", name));
 				}
 				method.setAccessible(true);
 				commandMap.put(name, new ShellCommandDefinition(obj, method));
@@ -223,7 +226,7 @@ public class Shell implements Runnable, Closeable {
 		String[] parts = cmd.split("\\s+");
 		ShellCommandDefinition cmdDef = commandMap.get(parts[0]);
 		if (cmdDef == null) {
-			throw new IllegalArgumentException(String.format("Command '%s' not registered.", parts[0]));
+			throw new IllegalArgumentException(String.format("command '%s' is not registered.", parts[0]));
 		}
 
 		Object[] args = new Object[parts.length - 1];
