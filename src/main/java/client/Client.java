@@ -170,7 +170,7 @@ public class Client {
             logger.info("Caught interrupt while waiting for shell.");
         } catch (ExecutionException x) {
             logger.info("Caught ExecutionExcpetion while waiting for shell.");
-        }
+        } 
 
         // clean up
         pool.shutdownNow();
@@ -379,7 +379,7 @@ public class Client {
             File file = new File(downloadDir, filename);
             String filestring = "";
             BufferedReader br;
-            Response response;
+            MessageResponse response = null;
             try {
                 br = new BufferedReader(new FileReader(file));
                 
@@ -398,7 +398,7 @@ public class Client {
                     if(o instanceof MessageResponse) {
                         response = (MessageResponse) o;
                     } else {
-                        response = new MessageResponse("Upload failes.");
+                        response = new MessageResponse("Upload failed.");
                     }
                 } catch (ClassNotFoundException x) {
                     logger.info("Class not found.");
@@ -412,7 +412,7 @@ public class Client {
                     x.printStackTrace();
             }
             
-            return null;
+            return response;
         }
 
         @Command

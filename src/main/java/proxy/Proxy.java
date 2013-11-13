@@ -7,6 +7,8 @@ import message.response.*;
 
 import model.DownloadTicket;
 
+import java.util.Date;
+import java.util.Calendar;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.HashMap;
@@ -25,6 +27,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Callable;
 import java.util.UUID;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import java.io.IOException;
 import java.io.BufferedReader;
@@ -47,6 +51,9 @@ import cli.Shell;
 
 import util.Config;
 import util.ChecksumUtils;
+import util.FileServerConnection;
+
+import model.FileServerInfo;
 
 import proxy.User;
 import proxy.FileServer;
@@ -194,6 +201,12 @@ public class Proxy {
         logger.info("Starting to listen for client connections.");
         pool.submit(CCL);
 
+        // create fileserver timout checker
+        FileServerTimeoutChecker fstoc = new FileServerTimeoutChecker();
+        logger.info("Starting to check for fileserver timeouts.");
+        Timer timer = new Timer(true); // start as daemon
+        timer.schedule(fstoc, 0, checkPeriod);
+
         // for now join shell
         try {
             shellfuture.get();
@@ -276,23 +289,45 @@ public class Proxy {
     }
 
     private FileServer getCurrentFileserver() {
-        if(fsUsage.size() < 1) {
-            return null;
-        }
-        Set<FileServer> keyset = fsUsage.keySet();
-        FileServer fileserver = (FileServer) keyset.toArray()[0];
-        Integer usage = fsUsage.get(fileserver);
-
-        for(FileServer f : keyset) {
-            Integer u = fsUsage.get(f);
-            if(u < usage) {
-                fileserver = f;
-                usage = u;
+        // get first online fs
+        FileServer lowest = null;
+        for(FileServer fs : fileservers) {
+            if(fs.isOnline()) { 
+                lowest = fs; 
+                break;
             }
         }
-        return fileserver;
+        
+        if(lowest == null) {
+            // no fileservers online
+            return null;
+        }
+
+        // search for lowest usage fs
+        for(FileServer fs : fileservers) {
+            if(!fs.isOnline()) {continue;};
+            if(lowest.getUsage() > fs.getUsage()) {
+                lowest = fs;
+            }
+        }
+            
+        return lowest;
     }
             
+    private class FileServerTimeoutChecker extends TimerTask {
+        public void run() {
+            Calendar cal = Calendar.getInstance();
+            Date dateNow = cal.getTime();
+            long now = dateNow.getTime();
+
+            for(FileServer fs : fileservers) {
+                long lastAlive = fs.getLastAlive().getTime();
+                if(lastAlive + timeout < now) {
+                    fs.setOffline();
+                }
+            }
+        }
+    }
 
     private class KeepAliveListener implements Runnable {
         /** 
@@ -330,7 +365,7 @@ public class Proxy {
                             String host = packet.getAddress().getHostAddress();
                             /*logger.info("Packet from " + host + ":" + port + 
                               " data: " + tcpPort);*/
-                            addFileServer(host, port, tcpPort);
+                            updateFileServer(host, port, tcpPort);
                         } catch (NumberFormatException x) {
                             logger.info("Couldn't parse data.");
                         }
@@ -353,13 +388,20 @@ public class Proxy {
             return aliveSocket;
         }
 
-        private void addFileServer(String host, Integer port, Integer tcpPort) {
+        private void updateFileServer(String host, Integer port, 
+                                      Integer tcpPort) {
+            // if fs already present, set online and update timestamp
             for(FileServer f : fileservers) {
                 if(f.getHost().equals(host) &&
                    f.getTcpPort().equals(tcpPort)) {
+                    Calendar cal = Calendar.getInstance();
+                    f.setLastAlive(cal.getTime());
+                    f.setOnline();
                     return;
                 }
             }
+
+            // else add the fs
             logger.debug("Adding new file server: " + host + ":" + port + ":" +
                          tcpPort + ".");
             FileServer fs = new FileServer(host, port, tcpPort);
@@ -458,11 +500,13 @@ public class Proxy {
                     
                     // LOGIN
                     if(o instanceof LoginRequest) {
+                        logger.debug("Got login request.");
                         LoginRequest request = (LoginRequest) o;
                         response = login(request);
                     }
                     // CREDITS
                     else if (o instanceof CreditsRequest) {
+                        logger.debug("Got credits request.");
                         CreditsRequest request = (CreditsRequest) o;
                         // verify request
                         response = verify(request.getSid());
@@ -472,6 +516,7 @@ public class Proxy {
                     }
                     // BUY
                     else if (o instanceof BuyRequest) {
+                        logger.debug("Got buy request.");
                         BuyRequest request = (BuyRequest) o;
                         // verify request
                         response = verify(request.getSid());
@@ -481,6 +526,7 @@ public class Proxy {
                     }
                     // LIST
                     else if (o instanceof ListRequest) {
+                        logger.debug("Got list request.");
                         ListRequest request = (ListRequest) o;
                         // verify reqeust
                         response = verify(request.getSid()); 
@@ -490,6 +536,7 @@ public class Proxy {
                     }
                     // DOWNLOAD
                     else if (o instanceof DownloadTicketRequest) {
+                        logger.debug("Got download request.");
                         DownloadTicketRequest request = 
                             (DownloadTicketRequest) o;
                         // verify reqeust
@@ -500,6 +547,7 @@ public class Proxy {
                     }
                     // UPLOAD
                     else if (o instanceof UploadRequest) {
+                        logger.debug("Got upload request.");
                         UploadRequest request = (UploadRequest) o;
                         // verify reqeust
                         response = verify(request.getSid()); 
@@ -509,6 +557,7 @@ public class Proxy {
                     }
                     // LOGOUT
                     else if (o instanceof LogoutRequest) {
+                        logger.debug("Got logout request.");
                         LogoutRequest request = (LogoutRequest) o;
                         // verify request
                         response = verify(request.getSid());
@@ -672,11 +721,6 @@ public class Proxy {
   
             // get file version
             Request versionrequest = new VersionRequest(request.getFilename());
-            fs = getCurrentFileserver();
-            if(fs == null) {
-                return new MessageResponse("No file server available.");
-            }
-
             fscon = new FileServerConnection(fs.getHost(), fs.getTcpPort(), 
                                              versionrequest);
             o = fscon.call();
@@ -701,6 +745,8 @@ public class Proxy {
             if(user != null && user.getCredits() >= filesize) {
                 // decrease user credits
                 user.setCredits(user.getCredits() - filesize);
+                // increase fs usage
+                fs.setUsage(fs.getUsage() + filesize);
 
                 // craft download ticket
                 String checksum = 
@@ -749,56 +795,6 @@ public class Proxy {
         
     }
 
-    class FileServerConnection implements Callable {
-        private Logger logger;
-        private String host;
-        private Integer port;
-        private Request request;
-
-        public FileServerConnection(String host, Integer port, Request request) {
-            logger = Logger.getLogger(FileServerConnection.class);
-            this.host = host;
-            this.port = port;
-            this.request = request;
-        }
-
-        public Response call() {
-            Socket socket = null;
-            ObjectOutputStream oos;
-            ObjectInputStream ois;
-            Response response = null;
-            try {
-                logger.debug("Connectiong to " + host + ":" + port+ ".");
-                socket = new Socket(host, port);
-
-                oos = new ObjectOutputStream(socket.getOutputStream());
-                ois = new ObjectInputStream(socket.getInputStream());
-                
-                logger.debug("Writing request to fs.");
-                oos.writeObject(request);
-
-                logger.debug("Reading request from fs.");
-                Object o = ois.readObject();
-                if(o instanceof Response) {
-                    logger.debug("Got Response.");
-                    response = (Response) o;
-                } else {
-                    logger.warn("Response corrupted.");
-                }
-            } catch(UnknownHostException x) {
-                logger.info("Host not known.");
-            } catch(IOException x) {
-                logger.info("Coudln't connect to file server.");
-                x.printStackTrace();
-            } catch (ClassNotFoundException x) {
-                logger.info("Class not found.");
-            }
-
-            logger.debug("Returning.");
-            return response;
-        }
-    }
-
     class UpdateFileCache implements Runnable {
         Logger logger;
         FileServer fs;
@@ -835,8 +831,16 @@ public class Proxy {
 
         @Command
         public Response fileservers() throws IOException {
-            System.out.println("TODO: list fileservers");
-            return new FileServerInfoResponse(null);
+            // create fileserver info array
+            ArrayList<FileServerInfo> fsInfos = new ArrayList<FileServerInfo>();
+            for(FileServer fs : fileservers) {
+                InetAddress addr = InetAddress.getByName(fs.getHost());
+                fsInfos.add(new FileServerInfo(addr, fs.getPort(), fs.getUsage(),
+                                               fs.isOnline()));
+            }
+
+            // send response
+            return new FileServerInfoResponse(fsInfos);
         }
 
         @Command

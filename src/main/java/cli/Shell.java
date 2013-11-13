@@ -88,7 +88,7 @@ public class Shell implements Runnable, Closeable {
 			} catch (IOException ex) {
 				System.out.println(ex.getClass().getName() + ": " + ex.getMessage());
 			}
-		}                    
+		}
 	}
 
 	/**
