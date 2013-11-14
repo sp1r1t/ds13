@@ -493,7 +493,7 @@ public class Client {
             shell.close();
 
             // close System.in
-            if( sysin != null)
+            if( sysin == System.in)
                 System.in.close();
 
             logger.info("Shutting down.");

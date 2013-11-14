@@ -674,7 +674,7 @@ public class FileServer implements IFileServer{
                 serverSocket.close(); // throws io exc in proxy con listener
             
             // close Syste.in (blocking)
-            if(in != null)
+            if(in == System.in)
                 System.in.close();
             
             // close shell

@@ -62,6 +62,7 @@ import proxy.FileServer;
 
 import org.apache.log4j.Logger;
 import org.apache.log4j.BasicConfigurator;
+import org.apache.log4j.Level;
 
 /**
  * The Proxy
@@ -151,6 +152,7 @@ public class Proxy {
         // set up logger
         logger = Logger.getLogger(Proxy.class);
         BasicConfigurator.configure();
+        //logger.setLevel(Level.toLevel("FATAL"));
         logger.debug("Logger is set up.");
 
         // read config
@@ -227,10 +229,9 @@ public class Proxy {
         fsUsage = new HashMap<FileServer, Integer>();
         fileCache = new HashSet<String>();
 
+        this.shell = shell;
 
         logger.info(name + " configured, starting services.");
-        
-        this.shell = shell;
     }
 
 
@@ -931,7 +932,7 @@ public class Proxy {
             }            
  
             // close System.in (blocking)
-            if(in != null)
+            if(in == System.in)
                 System.in.close();
  
            // close shell 
