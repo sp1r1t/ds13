@@ -2,8 +2,11 @@ package util;
 
 import cli.Shell;
 import client.IClientCli;
+import client.Client;
 import proxy.IProxyCli;
+import proxy.Proxy;
 import server.IFileServerCli;
+import server.FileServer;
 
 /**
  * Provides methods for starting an arbitrary amount of various components.
@@ -18,8 +21,9 @@ public class ComponentFactory {
 	 * @throws Exception if an exception occurs
 	 */
 	public IClientCli startClient(Config config, Shell shell) throws Exception {
-		// TODO: create a new client instance (including a Shell) and start it
-		return null;
+            Client client = new Client("client", config, shell);
+            client.run();
+            return client.getCli();
 	}
 
 	/**
@@ -31,8 +35,9 @@ public class ComponentFactory {
 	 * @throws Exception if an exception occurs
 	 */
 	public IProxyCli startProxy(Config config, Shell shell) throws Exception {
-		// TODO: create a new proxy instance (including a Shell) and start it
-		return null;
+            Proxy proxy = new Proxy("proxy", config, shell);
+            proxy.run();
+            return proxy.getCli();
 	}
 
 	/**
@@ -44,7 +49,8 @@ public class ComponentFactory {
 	 * @throws Exception if an exception occurs
 	 */
 	public IFileServerCli startFileServer(Config config, Shell shell) throws Exception {
-		// TODO: create a new file server instance (including a Shell) and start it
-		return null;
+            FileServer fs = new FileServer("fs", config, shell);
+            fs.run();
+            return fs.getCli();
 	}
 }

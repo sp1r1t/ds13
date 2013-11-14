@@ -6,6 +6,7 @@ import message.request.*;
 import message.response.*;
 
 import model.DownloadTicket;
+import model.UserInfo;
 
 import java.util.Date;
 import java.util.Calendar;
@@ -36,6 +37,7 @@ import java.io.PrintWriter;
 import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.InputStream;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -92,12 +94,22 @@ public class Proxy {
     // the proxy shell
     private Shell shell;
 
+    // the proxy cli interface
+    private IProxyCli cli;
+    
+    // the alive listener
+    private KeepAliveListener keepAliveListener;
+
+    // client connection listener 
+    private ClientConnectionListener CCL;
+
     // the thread pool
     private ExecutorService pool;
 
     // object input stream
     private ObjectInputStream ois;
 
+    private InputStream in;
 
     //* everything below is read from the config file *//
 
@@ -118,6 +130,12 @@ public class Proxy {
      */
     public static void main(String[] args) {
         Proxy proxy = new Proxy("proxy");
+        try {
+            proxy.run();
+        }
+        catch (IOException x) {
+            logger.info("Caught IOException");
+        }
         return;
     }
 
@@ -127,6 +145,8 @@ public class Proxy {
     public Proxy(String name) {
         // set name
         this.name = name;
+
+        in = System.in;
 
         // set up logger
         logger = Logger.getLogger(Proxy.class);
@@ -165,39 +185,72 @@ public class Proxy {
 
         logger.info(name + " configured, starting services.");
         
+        this.shell = null;
+    }
+
+    public Proxy(String name, Config config, Shell shell) {
+        // set name
+        this.name = name;
+        
+        in = null;
+
+        // set up logger
+        logger = Logger.getLogger(Proxy.class);
+        BasicConfigurator.configure();
+        logger.debug("Logger is set up.");
+
+        // read config
+        String key = name;
         try {
-            run();
+            key = "tcp.port";
+            tcpPort = config.getInt(key);
+            key = "udp.port";
+            udpPort = config.getInt(key);
+            key = "fileserver.timeout";
+            timeout = config.getInt(key);
+            key = "fileserver.checkPeriod";
+            checkPeriod = config.getInt(key);
         }
-        catch (IOException x) {
-            logger.info("Caught IOException");
+        catch (MissingResourceException x) {
+            if(key == name) {
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
+            } else {
+                logger.fatal("Key " + key + " is not defined.");
+            }
+            System.exit(1);
         }
-            
+
+        // create lists
+        users = new ArrayList<User>();
+        fileservers = new ArrayList<FileServer>();
+        fsUsage = new HashMap<FileServer, Integer>();
+        fileCache = new HashSet<String>();
+
+
+        logger.info(name + " configured, starting services.");
+        
+        this.shell = shell;
     }
 
 
     /**
      * Entry function for running the services
      */
-    private void run() throws IOException {
+    public void run() throws IOException {
         // read user config
         readUserConfig();
 
         // create thread pool
-        pool = Executors.newFixedThreadPool(10);
-
-        // give birth to shell thread and start it
-        shell = new Shell(name, System.out, System.in);
-        shell.register(new ProxyCli());
-        logger.info("Starting the shell.");
-        Future shellfuture = pool.submit(shell);
+        pool = Executors.newFixedThreadPool(30);
 
         // give birth to alive thread listener and start it
-        KeepAliveListener keepAliveListener = new KeepAliveListener();
+        keepAliveListener = new KeepAliveListener();
         logger.info("Starting to listen for keep alive messages.");
         pool.submit(keepAliveListener);
 
         // create client connection listener
-        ClientConnectionListener CCL = new ClientConnectionListener();
+        CCL = new ClientConnectionListener();
         logger.info("Starting to listen for client connections.");
         pool.submit(CCL);
 
@@ -207,6 +260,18 @@ public class Proxy {
         Timer timer = new Timer(true); // start as daemon
         timer.schedule(fstoc, 0, checkPeriod);
 
+        // give birth to shell thread and start it
+        cli = new ProxyCli();
+        if(shell == null) {
+            logger.debug("Creating new shell.");
+            shell = new Shell(name, System.out, System.in);
+        }
+        shell.register(cli);
+        logger.info("Starting the shell.");
+        Future shellfuture = pool.submit(shell);
+
+
+/*
         // for now join shell
         try {
             shellfuture.get();
@@ -215,18 +280,13 @@ public class Proxy {
         } catch (ExecutionException x) {
             logger.info("Caught ExecutionExcpetion while waiting for shell.");
         }
-
-        // clean up
-        pool.shutdownNow();
-        DatagramSocket aliveSocket = keepAliveListener.getAliveSocket();
-        if(aliveSocket != null)
-            aliveSocket.close(); // throws io exc in alive listener
-        ServerSocket serverSocket = CCL.getServerSocket();
-        if(serverSocket != null)
-            serverSocket.close(); // throws io exc in ccl
-
-
+*/
+        
         logger.info("Closing main");
+    }
+
+    public IProxyCli getCli() {
+        return cli;
     }
 
     /**
@@ -845,22 +905,39 @@ public class Proxy {
 
         @Command
         public Response users() throws IOException {
+            ArrayList<UserInfo> uinfo = new ArrayList<UserInfo>();
             for(User u : users) {
-                u.print();
+                uinfo.add(new UserInfo(u.getName(), u.getCredits(), u.isLoggedIn()));
             }
-            return new UserInfoResponse(null);
+            return new UserInfoResponse(uinfo);
         }
 
         @Command
         public MessageResponse exit() throws IOException {
             logger.info("Exiting shell.");
 
-            // close shell
+            // clean up
+            pool.shutdownNow();
+
+            DatagramSocket aliveSocket = keepAliveListener.getAliveSocket();
+            if(aliveSocket != null) {
+                logger.debug("Closing alive socket.");
+                aliveSocket.close(); // throws io exc in alive listener
+            }
+            ServerSocket serverSocket = CCL.getServerSocket();
+            if(serverSocket != null) {
+                logger.debug("Closing server socket.");
+                serverSocket.close(); // throws io exc in ccl
+            }            
+ 
+            // close System.in (blocking)
+            if(in != null)
+                System.in.close();
+ 
+           // close shell 
             shell.close();
             
-            // close System.in (blocking)
-            System.in.close();
-
+            logger.info("Shutting down.");
             return new MessageResponse("Shutdown proxy.");
         }
 

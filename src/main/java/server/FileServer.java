@@ -38,7 +38,7 @@ import java.io.FileReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.FileNotFoundException;
-
+import java.io.InputStream;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -77,6 +77,15 @@ public class FileServer implements IFileServer{
     // the fileserver shell
     private Shell shell;
 
+    // the fileserver cli
+    private IFileServerCli cli;
+
+    // proxy connection listener
+    ProxyConnectionListener PCL;
+
+    // input stream
+    private InputStream in;
+
     // everything below is read from the config file
 
     // time interval to send alive packets
@@ -103,6 +112,13 @@ public class FileServer implements IFileServer{
     public static void main(String[] args) {
         String name = new String(args[0]);
         FileServer fs = new FileServer(name);
+        try {
+            logger.info(name + " configured, starting services.");
+            fs.run();
+        }
+        catch (IOException x) {
+            logger.info("Ex: Caught IOException");
+        }
         return;
     }
 
@@ -111,6 +127,8 @@ public class FileServer implements IFileServer{
      */
     public FileServer(String name) {
         this.name = name;
+        this.in = System.in;
+
         // set up logger
         logger = Logger.getLogger(FileServer.class);
         BasicConfigurator.configure();
@@ -150,16 +168,53 @@ public class FileServer implements IFileServer{
         for(String s : dir.list()) {
             logger.debug(s);
         }
-
         
+        this.shell = null;
+    }
+
+    public FileServer(String name, Config config, Shell shell) {
+        this.name = name;
+        this.in = null;
+        // set up logger
+        logger = Logger.getLogger(FileServer.class);
+        BasicConfigurator.configure();
+        logger.debug("Logger is set up.");
+
+        // read config
+        String key = name;
         try {
-            logger.info(name + " configured, starting services.");
-            run();
+            key = "fileserver.alive";
+            alivePeriod = config.getInt(key);
+            key = "fileserver.dir";
+            dirString = config.getString(key);
+            key = "tcp.port";
+            tcpPort = config.getInt(key);
+            key = "proxy.host";
+            proxy = config.getString(key);
+            key = "proxy.udp.port";
+            udpPort = config.getInt(key);
+        } catch (MissingResourceException x) {
+            if(key == name) {
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
+            } else {
+                logger.fatal("Key " + key + " is not defined.");
+            }
+            System.exit(1);
         }
-        catch (IOException x) {
-            logger.info("Ex: Caught IOException");
+        
+        // set up file directory
+        dir = new File(dirString);
+        if(!dir.exists()) {
+            logger.warn("Specified directory does not exist. Creating it.");
+            dir.mkdirs();
         }
-            
+        logger.debug("File list: ");
+        for(String s : dir.list()) {
+            logger.debug(s);
+        }
+        
+        this.shell = shell;
     }
 
     @Override
@@ -196,19 +251,22 @@ public class FileServer implements IFileServer{
     /**
      * Entry function for running the services
      */
-    private void run() throws IOException {
+    public void run() throws IOException {
         // create executor service
         pool = Executors.newFixedThreadPool(10);
 
         // start ProxyConnectionListener
         logger.info("Starting ProxyConnectionListener");
-        ProxyConnectionListener PCL = new ProxyConnectionListener();
+        PCL = new ProxyConnectionListener();
         pool.submit(PCL);
 
         // start shell
         logger.info("Starting the shell.");
-        shell = new Shell(name, System.out, System.in);
-        shell.register(new FileServerCli());
+        if(shell == null) {
+            shell = new Shell(name, System.out, in);
+        }
+        cli = new FileServerCli();
+        shell.register(cli);
         Future shellfuture = pool.submit(shell);
 
 
@@ -223,21 +281,20 @@ public class FileServer implements IFileServer{
         // in the future.
         // e.g. if the keepAlive thread fails due to network problems this can
         // be handled here. or other maintainance stuff that may come.
+        /*
         try {
             shellfuture.get();
         } catch (InterruptedException x) {
             logger.info("Caught interrupt while waiting for shell.");
         } catch (ExecutionException x) {
             logger.info("Caught ExecutionExcpetion while waiting for shell.");
-        }
-
-        // clean up threads
-        pool.shutdownNow();
-        ServerSocket serverSocket = PCL.getServerSocket();
-        if(serverSocket != null)
-            serverSocket.close(); // throws io exc in proxy con listener
+            }*/
 
         logger.info("Closing main");
+    }
+
+    public IFileServerCli getCli() {
+        return cli;
     }
 
     /**
@@ -609,14 +666,22 @@ public class FileServer implements IFileServer{
         @Command
         public MessageResponse exit() throws IOException {
             logger.info("Exiting shell.");
+
+            // clean up threads
+            pool.shutdownNow();
+            ServerSocket serverSocket = PCL.getServerSocket();
+            if(serverSocket != null)
+                serverSocket.close(); // throws io exc in proxy con listener
+            
+            // close Syste.in (blocking)
+            if(in != null)
+                System.in.close();
             
             // close shell
             shell.close();
             
-            // close Syste.in (blocking)
-            System.in.close();
-            
-            return null;
+            logger.debug("Shutting down fileserver.");
+            return new MessageResponse("Shutdown fileserver.");
         }
 
         @Command

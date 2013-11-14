@@ -76,6 +76,8 @@ public class Client {
     private Integer tcpPort;
 
     private Shell shell;
+
+    private IClientCli cli;
     
     private ExecutorService pool;
 
@@ -88,6 +90,8 @@ public class Client {
     private ObjectInputStream ois;
 
     private UUID sid;
+
+    private InputStream sysin;
 
     /**
      * main function
@@ -104,6 +108,8 @@ public class Client {
     public Client(String name) {
         // set name
         this.name = name;
+
+        sysin = System.in;
 
         // set up logger
         logger = Logger.getLogger(Client.class);
@@ -129,9 +135,44 @@ public class Client {
             }
             System.exit(1);
         }
+
+        shell = null;
     }
 
-    private void run() {
+    public Client(String name, Config config, Shell shell) {
+        // set name
+        this.name = name;
+
+        sysin = null;
+
+        // set up logger
+        logger = Logger.getLogger(Client.class);
+        BasicConfigurator.configure();
+        logger.debug("Logger is set up.");
+
+        // read config
+        String key = name;
+        try {
+            key = "download.dir";
+            downloadDir = config.getString(key);
+            key = "proxy.host";
+            proxy = config.getString(key);
+            key = "proxy.tcp.port";
+            tcpPort = config.getInt(key);
+        } catch (MissingResourceException x) {
+            if(key == name) {
+                logger.fatal("Config " + key + 
+                             ".properties does not exist.");
+            } else {
+                logger.fatal("Key " + key + " is not defined.");
+            }
+            System.exit(1);
+        }
+
+        this.shell = shell;
+    }
+
+    public void run() {
         // set up thread pool
         pool = Executors.newFixedThreadPool(10);
 
@@ -158,11 +199,15 @@ public class Client {
         } 
 
         // set up shell
-        shell = new Shell(name, System.out, System.in);
-        shell.register(new ClientCli());
+        cli = new ClientCli();
+        if(shell == null) {
+            shell = new Shell(name, System.out, System.in);
+        }
+        shell.register(cli);
         logger.info("Starting the shell.");
         Future shellfuture = pool.submit(shell);
 
+        /*
         // for now join shell
         try {
             shellfuture.get();
@@ -170,17 +215,13 @@ public class Client {
             logger.info("Caught interrupt while waiting for shell.");
         } catch (ExecutionException x) {
             logger.info("Caught ExecutionExcpetion while waiting for shell.");
-        } 
+            } */
 
-        // clean up
-        pool.shutdownNow();
-        try {
-            proxySocket.close();
-        } catch (IOException x) {
-            logger.info("Caught IOException.");
-        }
+        logger.info("Closing main.");
+    }
 
-        logger.info("Shutting down client.");
+    public IClientCli getCli() {
+        return cli;
     }
 
     class ClientCli implements IClientCli {
@@ -440,12 +481,22 @@ public class Client {
         public MessageResponse exit() throws IOException {
             logger.info("Exiting shell.");
 
+            // clean up
+            pool.shutdownNow();
+            try {
+                proxySocket.close();
+            } catch (IOException x) {
+                logger.info("Caught IOException.");
+            }
+            
             // close shell
             shell.close();
 
             // close System.in
-            System.in.close();
+            if( sysin != null)
+                System.in.close();
 
+            logger.info("Shutting down.");
             return new MessageResponse("Shutdown client.");
         }
 

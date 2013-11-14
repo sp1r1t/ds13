@@ -4,7 +4,7 @@
 
 client:	!login alice 12345
 client:	!credits
-proxy:	!users
+proxy:	!user
 
 proxy:	!exit
 client:	!exit
