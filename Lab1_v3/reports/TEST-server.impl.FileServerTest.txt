@@ -1,0 +1,7 @@
+Testsuite: server.impl.FileServerTest
+Tests run: 1, Failures: 0, Errors: 0, Time elapsed: 0,096 sec
+------------- Standard Output ---------------
+FileServer [fileserver_alive=1000, fileserver_dir=files/fileserver1, tcp_port=11922, proxy_host=localhost, proxy_udp_port=11921, fileServerCLI=server.impl.FileServerCLI@48fd918a, fileManager=util.files.FileManager@7f5e2075, tcpSocketListener=util.sockets.TCPSocketListener@7ca522a6, udpSocketSender=util.sockets.UDPSocketSender@3d860038, active=true, usage=0, connectionPool=util.sockets.MessagingConnectionPool@28787c16]
+------------- ---------------- ---------------
+
+Testcase: test took 0,066 sec

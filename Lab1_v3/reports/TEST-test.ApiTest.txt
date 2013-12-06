@@ -1,0 +1,19 @@
+Testsuite: test.ApiTest
+Tests run: 1, Failures: 0, Errors: 0, Time elapsed: 23,107 sec
+------------- Standard Output ---------------
+00_login_test.txt
+ProxyServer [tcp_port=11920, udp_port=11921, fileserver_timeout=3000, fileserver_checkperiod=1000, userManager=proxy.impl.users.UserManager@2e716cb7, fileServerManager=proxy.impl.fileservers.FileServerManager@18987a33, proxyServerCLI=proxy.impl.ProxyServerCLI@427eb6e2, tcpSocketListener=util.sockets.TCPSocketListener@d18d189, udpSocketListener=util.sockets.UDPSocketListener@58648016, connectionPool=util.sockets.MessagingConnectionPool@2e1551b0, active=true, activeUser=null, activeSource=null]
+Client [download_dir=files/client, proxy_host=localhost, proxy_tcp_port=11920, fileManager=util.files.FileManager@238b8914, clientShell=cli.Shell@1dd49247, proxySocket=null, oos=null, ois=null]
+FileServer [fileserver_alive=1000, fileserver_dir=files/fileserver1, tcp_port=11922, proxy_host=localhost, proxy_udp_port=11921, fileServerCLI=server.impl.FileServerCLI@59d0d45b, fileManager=util.files.FileManager@1d25d06e, tcpSocketListener=util.sockets.TCPSocketListener@1d96f4b5, udpSocketSender=util.sockets.UDPSocketSender@219ba640, active=true, usage=0, connectionPool=util.sockets.MessagingConnectionPool@71bfc4fc]
+22:21:27.016		client> !login alice 12345
+22:21:27.114		client: !login success
+22:21:27.511		client> !credits
+22:21:27.566		client: You have 200 credits left.
+22:21:28.013		proxy> !users
+22:21:28.019		proxy:
+22:21:28.019		1. bill            offline           200
+22:21:28.019		2. alice           online            200
+22:21:28.513		proxy> !exit
+------------- ---------------- ---------------
+
+Testcase: test took 23,104 sec
